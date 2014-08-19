@@ -1,0 +1,228 @@
+package com.aod.clubapp;
+
+import java.util.List;
+
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.os.Bundle;
+import android.support.v4.content.LocalBroadcastManager;
+import android.text.TextUtils;
+import android.util.Log;
+import android.view.View;
+import android.widget.TextView;
+
+import com.aod.clubapp.communicaton.datamodel.Album;
+import com.aod.clubapp.communicaton.datamodel.AuraDataSession;
+import com.aod.clubapp.communicaton.datamodel.Comment;
+import com.aod.clubapp.communicaton.datamodel.Photo;
+import com.aod.clubapp.communicaton.datamodel.Photo.PhotoUserTag;
+/**
+ * Base class for activities that show full screen photo as background and information on top of it
+ * 
+ * @author Anatoliy Odukha <aodukha@gmail.com>
+ *
+ */
+public abstract class BasePhotoViewActivity extends AuraBaseActivityFullscreen {
+
+	public static final String TAG = "BasePhotoViewActivity";
+
+	protected TextView username;
+	protected TextView firstComment;
+	protected TextView moreComments;
+	protected TextView likesCount;
+	
+	protected long albumId = -1;
+	protected long photoId = -1;
+	protected Album album;
+	protected Photo photo;
+
+	private BroadcastReceiver commentsReceiver = new BroadcastReceiver() {
+		
+		@Override
+		public void onReceive(Context context, Intent intent) {
+			Log.i(TAG, "catched broadcast AuraDataSession.ACTION_LOAD_COMMENTS_RESULT");
+			int status = intent.getIntExtra(AuraDataSession.OPERATION_STATUS, AuraDataSession.STATUS_FAIL);
+
+			if (status == AuraDataSession.STATUS_FAIL) {										
+				Log.i(TAG, "commentsReceiver operation failed");
+				
+			}
+			onCommentsReceived(status == AuraDataSession.STATUS_FAIL);
+		}
+	};
+
+	protected void onCommentsReceived(boolean failed){
+		//override it
+	}
+	
+	@Override
+	public void onDataServiceDisConnected() {
+		// nothing todo		
+	}
+	
+	protected abstract void setupContentView();
+	
+	@Override
+	protected void onCreate(Bundle savedInstanceState) {
+		super.onCreate(savedInstanceState);
+		
+		setupContentView();
+		albumId = getIntent().getLongExtra(PARAM_ALBUM_ID, -1);
+		photoId = getIntent().getLongExtra(PARAM_PHOTO_ID, -1);
+		final View controlsView = findViewById(R.id.fullscreen_content_controls);
+		final View contentView = findViewById(R.id.fullscreen_content);
+		likesCount = (TextView) findViewById(R.id.tv_likes_count);
+		
+		username = (TextView) findViewById(R.id.tv_user_name);
+		firstComment = (TextView) findViewById(R.id.tv_comment_text);
+		moreComments = (TextView) findViewById(R.id.tv_more_comments);
+		
+		moreComments.setOnClickListener(new View.OnClickListener() {			
+			@Override
+			public void onClick(View v) {
+				CommentsListActivity.showCommentsActivity(albumId, photoId, BasePhotoViewActivity.this);				
+			}
+		});
+		
+		setupSystemUiHider(controlsView, contentView);
+	}
+	
+    @Override
+    protected void onStart() {
+    	super.onStart();
+    	LocalBroadcastManager.getInstance(this).registerReceiver(commentsReceiver, new IntentFilter(AuraDataSession.ACTION_LOAD_COMMENTS_RESULT));
+    }
+    
+    @Override
+    protected void onStop() {
+    	super.onStop();
+    	LocalBroadcastManager.getInstance(this).unregisterReceiver(commentsReceiver);
+    }	
+    
+	protected void updateLikesCount(Photo photo ){
+		if(likesCount != null && photo != null) {
+			updateLikesCound(likesCount, photo.getLikesCount(), photo.isLiked());
+		}		
+	}
+	
+	protected void updateMarkedUsersLabels(Photo targetPhoto){
+		View friendsContainer = findViewById(R.id.friends_cnt);
+		TextView userMark = (TextView) findViewById(R.id.tv_user);
+		TextView userMarkCount = (TextView) findViewById(R.id.tv_marked_users_msg);
+		userMark.setVisibility(View.INVISIBLE);
+		userMarkCount.setVisibility(View.INVISIBLE);
+		
+		if(targetPhoto.getUserTagsCount() > 0) {
+			friendsContainer.setVisibility(View.VISIBLE);
+			PhotoUserTag[] tags = targetPhoto.getUserTags();
+			userMark.setVisibility(View.VISIBLE);
+			userMark.setText("@" + tags[0].getLogin());
+			userMark.setTag(tags[0].getUserId());
+			userMark.setOnClickListener(new View.OnClickListener() {				
+				@Override
+				public void onClick(View v) {
+					if(v.getTag() != null){
+						long uid = ((Long)v.getTag()).longValue();
+						ViewUserProfileActivity.showViewUserPrifileActivity(uid, BasePhotoViewActivity.this);
+					}else {
+						Log.w(TAG, "updateMarkedUsersLabels.OnClickListener view have no tag");
+					}					
+				}
+			});
+
+			if(tags.length > 1){
+				userMarkCount.setText(getString(R.string.marked_users_count, tags.length  - 1));
+				userMarkCount.setVisibility(View.VISIBLE);
+			}
+		} else {
+			friendsContainer.setVisibility(View.GONE);
+		}		
+	}
+	
+	protected void processLikeClick(Photo target){
+		if(target != null) {
+			if(target.isLiked()) {
+				target.decLikesCount();
+				target.setLiked(false);
+				getLocalService().unLikePhoto(target.getId());
+				
+			} else {
+				target.incLikesCount();
+				target.setLiked(true);
+				getLocalService().likePhoto(target.getId());
+			}
+		}
+		updateLikesCount(target);
+	}
+	protected void hideComments(){
+		moreComments.setVisibility(View.INVISIBLE);
+		findViewById(R.id.comment_first).setVisibility(View.INVISIBLE);
+		findViewById(R.id.comment_second).setVisibility(View.INVISIBLE);
+		username.setVisibility(View.INVISIBLE);
+		firstComment.setVisibility(View.INVISIBLE);		
+	}
+	protected void showComments(){
+		moreComments.setVisibility(View.VISIBLE);
+		findViewById(R.id.comment_first).setVisibility(View.VISIBLE);
+		findViewById(R.id.comment_second).setVisibility(View.VISIBLE);
+		username.setVisibility(View.VISIBLE);
+		firstComment.setVisibility(View.VISIBLE);		
+	}
+	
+	protected void updateCommentsInfo(List<Comment> cmts) {
+		Comment cmt = null;
+		long commentsCount = cmts.size();
+		if(commentsCount > 0)
+			cmt = cmts.get(0);
+
+		if (((commentsCount - 2)) < 1) {
+			moreComments.setVisibility(View.INVISIBLE);
+		} else {
+			moreComments.setVisibility(View.VISIBLE);
+			moreComments.setText(getString(R.string.more_comments,
+					commentsCount > 2 ? (commentsCount - 2) : 0));
+		}
+
+		TextView username2 = (TextView) findViewById(R.id.tv_user_name2);
+		TextView comment2 = (TextView) findViewById(R.id.tv_comment_text2);
+		if(cmt == null || commentsCount < 1) {
+			findViewById(R.id.comment_first).setVisibility(View.INVISIBLE);
+			findViewById(R.id.comment_second).setVisibility(View.INVISIBLE);
+			username.setVisibility(View.INVISIBLE);
+			firstComment.setVisibility(View.INVISIBLE);			
+			username2.setVisibility(View.INVISIBLE);
+			comment2.setVisibility(View.INVISIBLE);
+		} else {
+			findViewById(R.id.comment_first).setVisibility(View.VISIBLE);
+			findViewById(R.id.comment_second).setVisibility(View.VISIBLE);
+			username.setVisibility(View.VISIBLE);
+			firstComment.setVisibility(View.VISIBLE);			
+			String uname = "anonymous";
+			if(cmt.getUser() != null && !TextUtils.isEmpty(cmt.getUser().getLogin())) {
+				uname = cmt.getUser().getLogin();
+			}
+			username.setText("@"+ uname + ":");
+			firstComment.setText(cmt.getBody());
+			//fill second comments
+			if(commentsCount > 1) {
+				//show second comment controls
+				username2.setVisibility(View.VISIBLE);
+				comment2.setVisibility(View.VISIBLE);
+				//fill data
+				cmt = cmts.get(1);
+				uname = "anonymous";
+				if(cmt.getUser() != null && !TextUtils.isEmpty(cmt.getUser().getLogin())) {
+					uname = cmt.getUser().getLogin();
+				}
+				username2.setText("@"+ uname + ":");
+				comment2.setText(cmt.getBody());
+
+			} else {
+				username2.setVisibility(View.INVISIBLE);
+				comment2.setVisibility(View.INVISIBLE);				
+			}
+		}		
+	}
+}

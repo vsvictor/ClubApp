@@ -1,0 +1,371 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/main_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/screen_bg" >
+
+    <ImageView
+        android:id="@+id/photo_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/white_overlay"
+        android:gravity="center"
+        android:orientation="vertical" >
+
+        <ScrollView
+            android:id="@+id/scroll_container"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/white_overlay"
+            android:padding="5dp" >
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical" >
+
+                <TextView
+                    android:id="@+id/title_priv"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/profile_title_privacy_big"
+                    android:textAppearance="?android:attr/textAppearanceMedium"
+                    android:textColor="#666"
+                    android:textSize="14sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="2dp"
+                    android:background="#CCC"
+                    android:orientation="vertical" >
+                </LinearLayout>
+
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" >
+
+                    <LinearLayout
+                        android:id="@+id/r_cnt_1"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentRight="true"
+                        android:layout_alignParentTop="true"
+                        android:layout_marginTop="5dp" >
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/profile_privacy_photo_labels"
+                            android:textAppearance="?android:attr/textAppearanceMedium"
+                            android:textColor="@android:color/black"
+                            android:textSize="18sp" />
+
+                        <Switch
+                            android:id="@+id/cb_tags_private"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:thumb="@drawable/appthemepink_switch_inner_holo_light"
+                            android:track="@drawable/appthemepink_switch_track_holo_light" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/delim_1_1"
+                        style="@style/delimeter_thin_gray"
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_below="@id/r_cnt_1"
+                        android:orientation="horizontal" />
+
+                    <LinearLayout
+                        android:id="@+id/r_cnt_2"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentRight="true"
+                        android:layout_below="@id/delim_1_1" >
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/profile_privacy_msg_from_all"
+                            android:textAppearance="?android:attr/textAppearanceMedium"
+                            android:textColor="@android:color/black"
+                            android:textSize="18sp" />
+
+                        <Switch
+                            android:id="@+id/cb_messages_private"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="@android:color/black"
+                            android:thumb="@drawable/appthemepink_switch_inner_holo_light"
+                            android:track="@drawable/appthemepink_switch_track_holo_light" />
+                    </LinearLayout>
+                </RelativeLayout>
+
+                <TextView
+                    android:id="@+id/title_push"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="@string/settings_title_uvediml"
+                    android:textAppearance="?android:attr/textAppearanceMedium"
+                    android:textColor="#666"
+                    android:textSize="14sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="2dp"
+                    android:background="#CCC"
+                    android:orientation="vertical" >
+                </LinearLayout>
+
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" >
+
+                    <LinearLayout
+                        android:id="@+id/r_cnt_1"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentRight="true"
+                        android:layout_alignParentTop="true"
+                        android:layout_marginTop="3dp" >
+
+                        <TextView
+                            style="@style/edit_settings_gray_tv"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/settings_title_push_likes" />
+
+                        <Switch
+                            android:id="@+id/cb_likes"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="@android:color/black"
+                            android:thumb="@drawable/appthemepink_switch_inner_holo_light"
+                            android:track="@drawable/appthemepink_switch_track_holo_light" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/delim_2"
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"                        
+                        android:layout_below="@id/r_cnt_1"
+                        style="@style/delimeter_thin_gray"/>
+
+                    <LinearLayout
+                        android:id="@+id/r_cnt_2"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentRight="true"
+                        android:layout_below="@id/delim_2" >
+
+                        <TextView
+                            style="@style/edit_settings_gray_tv"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/settings_title_push_comments" />
+
+                        <Switch
+                            android:id="@+id/cb_comments"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="@android:color/black"
+                            android:thumb="@drawable/appthemepink_switch_inner_holo_light"
+                            android:track="@drawable/appthemepink_switch_track_holo_light" />
+                    </LinearLayout>
+                    
+                    <LinearLayout
+                        android:id="@+id/delim_3"
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"                        
+                        android:layout_below="@id/r_cnt_2"
+                        style="@style/delimeter_thin_gray"/>
+                    
+                    <LinearLayout
+                        android:id="@+id/r_cnt_3"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentRight="true"
+                        android:layout_below="@id/delim_3" >
+
+                        <TextView
+                            style="@style/edit_settings_gray_tv"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/settings_title_push_user_tags" />
+
+                        <Switch
+                            android:id="@+id/cb_tags"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="@android:color/black"
+                            android:thumb="@drawable/appthemepink_switch_inner_holo_light"
+                            android:track="@drawable/appthemepink_switch_track_holo_light" />
+                    </LinearLayout>
+					<LinearLayout
+                        android:id="@+id/delim_4"
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"                        
+                        android:layout_below="@id/r_cnt_3"
+                        style="@style/delimeter_thin_gray"/>
+                    
+                    <LinearLayout
+                        android:id="@+id/r_cnt_4"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentRight="true"
+                        android:layout_below="@id/delim_4" >
+
+                        <TextView
+                            style="@style/edit_settings_gray_tv"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/settings_title_push_new_message" />
+
+                        <Switch
+                            android:id="@+id/cb_messages"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="@android:color/black"
+                            android:thumb="@drawable/appthemepink_switch_inner_holo_light"
+                            android:track="@drawable/appthemepink_switch_track_holo_light" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/delim_5"
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"                        
+                        android:layout_below="@id/r_cnt_4"
+                        style="@style/delimeter_thin_gray"/>
+                    
+                    <LinearLayout
+                        android:id="@+id/r_cnt_5"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentRight="true"
+                        android:layout_below="@id/delim_5" >
+
+                        <TextView
+                            style="@style/edit_settings_gray_tv"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/settings_title_push_new_contacts" />
+
+                        <Switch
+                            android:id="@+id/cb_contacts"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="@android:color/black"
+                            android:thumb="@drawable/appthemepink_switch_inner_holo_light"
+                            android:track="@drawable/appthemepink_switch_track_holo_light" />
+                    </LinearLayout>
+                </RelativeLayout>
+
+                <TextView
+                    android:id="@+id/title_push"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="@string/settings_title_uvediml"
+                    android:textAppearance="?android:attr/textAppearanceMedium"
+                    android:textColor="#666"
+                    android:textSize="16sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="2dp"
+                    android:background="#CCC"
+                    android:orientation="vertical" >
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tv_user_agreement"
+                    style="@style/edit_settings_gray_tv"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="2dp"
+                    android:layout_marginTop="7dp"
+                    android:text="@string/title_license" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    style="@style/delimeter_thin_gray" >
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tv_policy"
+                    style="@style/edit_settings_gray_tv"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="2dp"
+                    android:layout_marginTop="2dp"
+                    android:text="@string/title_policy" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    style="@style/delimeter_thin_gray" >
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tv_contace_us"
+                    style="@style/edit_settings_gray_tv"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="2dp"
+                    android:layout_marginTop="2dp"
+                    android:text="@string/settings_title_contact_us" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    style="@style/delimeter_thin_gray" >
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/spaces_cnt"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="5dp"
+                    android:layout_marginTop="5dp" >
+
+                    <Space
+                        android:layout_width="wrap_content"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1" />
+
+                    <Button
+                        android:id="@+id/tv_exit"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="3"
+                        android:background="@drawable/bg_black_rect_non_transparent"
+                        android:text="@string/settings_title_exit"
+                        android:textAppearance="?android:attr/textAppearanceMedium"
+                        android:textColor="@android:color/white"
+                        android:textStyle="bold" />
+
+                    <Space
+                        android:layout_width="wrap_content"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1" />
+                </LinearLayout>
+            </LinearLayout>
+        </ScrollView>
+    </LinearLayout>
+
+</FrameLayout>

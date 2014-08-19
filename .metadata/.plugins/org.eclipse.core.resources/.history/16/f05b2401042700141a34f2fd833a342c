@@ -1,0 +1,158 @@
+package com.aod.clubapp.communicaton.datamodel;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Date;
+
+import com.aod.clubapp.communicaton.datamodel.Photo.PhotoUserTag;
+import com.google.gson.annotations.SerializedName;
+
+/**
+ * "http://fixapp-clubs.herokuapp.com/api/v1/albums?auth_token=dda538b8ae267a62bb432e0b6e7bf4ee&page=1"
+ *  will return array of Album
+ *
+ * @author Anatoliy Odukha <aodukha@gmail.com>
+ */
+public class Album {
+	
+	@SerializedName("banner")
+	Banner ban;
+	
+	@SerializedName("id")
+	long id;
+	
+	@SerializedName("name")
+	String name;
+	
+	@SerializedName("place_name")
+	String placeName;
+	
+	@SerializedName("date")
+	Date date;
+
+	@SerializedName("interview")
+	boolean interview;
+	
+	@SerializedName("place_id")
+	long placeId;
+	
+	@SerializedName("likes_count")
+	long likesCount;
+
+	@SerializedName("cover_image")
+	Photo coverImage;
+
+	@SerializedName("photos_count")
+	int photos_count;
+		
+
+	@SerializedName("photos")
+	Photo photos[];
+	
+	public Album(Photo photos[]){
+		id = 0;
+		this.photos = photos;
+	}
+	
+	public long getId() {
+		return id;
+	}
+
+	public String getName() {
+		return name;
+	}
+
+	public String getPlaceName() {
+		return placeName;
+	}
+
+	public Date getDate() {
+		return date;
+	}
+
+	public long getLikesCount() {
+		return likesCount;
+	}
+
+	public int getPhotosCount() {
+		//if(photos == null) {
+		//	return 0;
+		//}
+		//return photos.length;
+		return photos_count;
+	}
+
+	public String getCoverImageUrl() {
+		if(coverImage != null) {
+			if( coverImage.imageThumbUrl != null) {
+				return coverImage.imageThumbUrl;
+			}
+			return coverImage.imageMediumUrl;
+		}
+		return null;
+	}
+
+	public Photo[] getPhotos(){
+		return photos;
+	}	
+	public void setPhotos(Photo[] arr){
+		photos = arr.clone();
+	}	
+	
+	public Photo getPhotoById(long id){
+		if(photos != null && photos.length > 0){
+			for(Photo ph : photos) {
+				if(ph.id == id)
+					return ph;
+			}
+		}
+		return null;
+	} 
+	
+	public Photo getPhotoByPosition(int position){
+		if(photos != null && photos.length > 0 && position < photos.length){
+			return photos[position];
+		}
+		return null;
+	}
+
+	public boolean isInterview() {
+		return interview;
+	}
+
+	public Photo getCoverImage() {
+		return coverImage;
+	}
+	
+	public boolean isBanner(){
+		return (id<=0);
+	}
+	
+	public Banner getBanner(){
+		return ban;
+	}
+	
+	public void addTagToPhoto(long pId, PhotoUserTag tag){
+		if(photos != null && photos.length >0){
+			//find photo
+			for(Photo pht : photos){
+				if(pht.getId() == pId)
+					pht.addNewTag(tag);
+			}
+		}
+	}
+	
+	public void changeLikeOnPhoto(long pId, boolean liked){
+		if(photos != null && photos.length >0){
+			//find photo
+			for(Photo pht : photos){
+				if(pht.getId() == pId) {
+					likesCount = liked ? likesCount+1 : likesCount-1;
+					likesCount = likesCount < 0 ? 0 : likesCount;
+					pht.setLiked(liked);
+				}
+					
+			}
+		}
+	}
+	
+}

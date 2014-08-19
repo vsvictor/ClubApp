@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<qualifiedTypeNameHistroy>
+<fullyQualifiedTypeName name="com.aod.clubapp.communicaton.auraapi.BaseGetApiCommand"/>
+<fullyQualifiedTypeName name="com.aod.clubapp.communicaton.auraapi.LoadAlbumsCollection"/>
+<fullyQualifiedTypeName name="com.aod.clubapp.communicaton.datamodel.Banner"/>
+<fullyQualifiedTypeName name="com.aod.clubapp.R.id"/>
+<fullyQualifiedTypeName name="android.app.AlertDialog"/>
+<fullyQualifiedTypeName name="android.content.DialogInterface"/>
+<fullyQualifiedTypeName name="android.view.View.OnClickListener"/>
+<fullyQualifiedTypeName name="com.aod.clubapp.communicaton.datamodel.Photo"/>
+<fullyQualifiedTypeName name="com.aod.clubapp.communicaton.auraapi.LoadPhotosByIdAlbum"/>
+<fullyQualifiedTypeName name="com.aod.clubapp.communicaton.datamodel.Photos"/>
+<fullyQualifiedTypeName name="com.aod.clubapp.MainActivity"/>
+</qualifiedTypeNameHistroy>

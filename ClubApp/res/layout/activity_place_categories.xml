@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/screen_bg"
+    android:orientation="vertical"
+    tools:context=".MainActivity" >
+
+    <ListView
+        android:id="@+id/list"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@android:color/transparent"
+        android:dividerHeight="1dp" 
+        android:divider="@color/listview_delimiter_color">
+
+    </ListView>
+
+    
+	<ViewFlipper
+        android:id="@android:id/empty"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" >
+    
+	    <ImageView
+	        android:id="@+id/loading_data"
+	        android:layout_width="match_parent"
+	        android:layout_height="match_parent"
+	        android:layout_gravity="center"
+	        android:scaleType="center"
+	        android:src="@drawable/a_progress" />
+		<LinearLayout
+		    android:id="@+id/no_data"
+		    android:layout_width="match_parent"
+		    android:layout_height="match_parent"
+		    android:orientation="vertical" 
+		    android:gravity="center">
+	
+			<TextView
+			    android:id="@+id/no_data_msg"
+			    android:layout_width="wrap_content"
+			    android:layout_height="wrap_content"
+			    android:gravity="center"
+			    android:text="@string/no_data_loaded"
+			    android:textAppearance="?android:attr/textAppearanceLarge" />
+	
+	    </LinearLayout>    
+    
+    </ViewFlipper>
+
+</LinearLayout>

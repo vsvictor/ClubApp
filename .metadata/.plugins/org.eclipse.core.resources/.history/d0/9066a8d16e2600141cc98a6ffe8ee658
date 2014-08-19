@@ -1,0 +1,103 @@
+package com.aod.clubapp.communicaton.auraapi;
+
+import java.io.IOException;
+import java.net.MalformedURLException;
+import java.util.ArrayList;
+import java.util.Arrays;
+
+import android.content.Context;
+import android.text.TextUtils;
+import android.util.Log;
+
+import com.aod.clubapp.communicaton.datamodel.AuraDataSession;
+import com.aod.clubapp.communicaton.datamodel.User;
+import com.aod.clubapp.communicaton.datamodel.Users;
+import com.google.gson.Gson;
+import com.google.gson.JsonSyntaxException;
+
+public class LoadFollowedUsersCommand extends BaseGetApiCommand  implements IApiCommand {
+	
+	//sample:
+	//http://fixapp-clubs.herokuapp.com/api/v1/users/12/followed_users?auth_token=810141f2701020f803e1d1d34eb1c58d
+		
+	private static final String apiPath = AuraDataSession.BASE_URL_OLD + "users/";
+
+	private long userId;
+	private User[] users;
+	AuraDataSession session;
+	
+	public LoadFollowedUsersCommand(long userId, AuraDataSession session) {
+		super(session.getAuthTooken());
+		this.userId = userId;
+		this.session = session;
+	}
+	@Override
+	public String getApiPath() {
+		StringBuilder builder = new StringBuilder();
+		builder.append(apiPath)
+		.append(userId)
+//		.append("/followed_users?auth_token=")
+		.append("/albums/?auth_token=")
+		.append(getAuthTooken())
+		.append("&page=1");
+		
+		return builder.toString();
+	}
+
+	@Override
+	public void run() {
+		try {
+			//String gq = getApiPath()+"/"+session.getCurrentUserId()+"/albums";
+			String qRes = doGet(getApiPath());
+			//String qRes = doGet(gq);
+			if( TextUtils.isEmpty(qRes)) {
+				//failed
+			} else {
+				Log.d(TAG, "LoadComments loaded from followed users: " + qRes);
+				Gson gson = getGson();
+				Users parsed =  gson.fromJson(qRes, Users.class);
+				users = parsed.getUsers();
+				if(users != null && users.length > 0) {
+					session.setFollowedUsers(new ArrayList<User>(Arrays.asList(users)));
+				}
+				setCommandFailed(false);
+				setAuthFailture(false);
+			}
+		} catch (ServerUnAuthorizedException e) {
+			setCommandFailed(true);
+			setAuthFailture(true);
+		} catch (JsonSyntaxException e) {
+			Log.e(TAG, "bad json comes from server", e);
+			setCommandFailed(true);
+		}catch (MalformedURLException e) {
+			setCommandFailed(true);
+			Log.e(TAG, "LoadComments.run() failed by exception", e);
+			e.printStackTrace();
+		} catch (IOException e) {
+			setCommandFailed(true);
+			Log.e(TAG, "LoadComments.run() failed by exception", e);
+			e.printStackTrace();
+		}
+
+		
+	}
+
+	@Override
+	public void onSuccesExecution(Context cntx) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void onFailExecution(Context cntx) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public boolean isFailed() {
+		// TODO Auto-generated method stub
+		return false;
+	}
+
+}

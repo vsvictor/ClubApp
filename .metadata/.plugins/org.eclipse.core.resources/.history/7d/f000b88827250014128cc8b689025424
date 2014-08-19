@@ -1,0 +1,717 @@
+package com.aod.clubapp;
+
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.BroadcastReceiver;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.DialogInterface;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.ServiceConnection;
+import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager.NameNotFoundException;
+import android.os.AsyncTask;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.IBinder;
+import android.support.v4.content.LocalBroadcastManager;
+import android.util.Log;
+import android.util.Pair;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
+import android.view.View;
+import android.view.animation.Animation;
+import android.view.animation.AnimationUtils;
+import android.widget.SearchView;
+import android.widget.SearchView.OnQueryTextListener;
+import android.widget.ViewFlipper;
+
+import com.aod.clubapp.communicaton.AuraDataService;
+import com.aod.clubapp.communicaton.IAuraOperations;
+import com.aod.clubapp.communicaton.auraapi.BaseGetApiCommand;
+import com.aod.clubapp.communicaton.datamodel.Album;
+import com.aod.clubapp.communicaton.datamodel.AuraDataSession;
+import com.aod.clubapp.communicaton.datamodel.LoadedAlbumsKeeper;
+import com.aod.clubapp.communicaton.datamodel.PlacesList;
+import com.aod.clubapp.utils.Preferences;
+import com.bugsense.trace.BugSenseHandler;
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GooglePlayServicesUtil;
+import com.google.android.gms.gcm.GoogleCloudMessaging;
+import com.google.gson.Gson;
+import com.google.gson.JsonSyntaxException;
+
+public class MainActivity extends Activity implements OnQueryTextListener , SearchView.OnCloseListener{
+	private static final String TAG = "MainActivity";
+	
+	public static final String EXTRA_MESSAGE = "message";
+    public static final String PROPERTY_REG_ID = "registration_id";
+    public static final String PROPERTY_APP_VERSION = "appVersion";
+    public final static int PLAY_SERVICES_RESOLUTION_REQUEST = 9000;
+    /**
+     * Substitute you own sender ID here. This is the project number you got
+     * from the API Console, as described in "Getting Started."
+     */
+    public static final String SENDER_ID = "554202802062";
+	
+	public static final long WAIT_BEFORE_UPDATE = 15000;
+	
+	public static final String EXTRAS_KEY_INTERVIEW_ONLY = "intervew_only_mode";
+	public static final String EXTRAS_KEY_FRIENDS_ONLY = "friends_labels_only_mode";
+	
+	private ViewFlipper switcher;
+	private Animation slideLeft;
+	private Animation slideRight;
+	
+	GoogleCloudMessaging gcm;
+    AtomicInteger msgId = new AtomicInteger();
+    SharedPreferences prefs;
+    Context context;
+    String regid;
+    
+	private View annList;
+	private IAuraOperations dataService;	
+	private AnnouncementScreen announceScreen;
+	private String searchQuery = null;
+
+	private ViewMode viewMode = ViewMode.MAIN;
+	public enum ViewMode {
+		MAIN,
+		INTERVIEW,
+		FRIENDS_PHOTO,
+		FOR_PLACE,
+	}
+	
+	private long loadAlbumReqId = -1;    
+    private static String loadAlbumUrlBase = AuraDataSession.BASE_URL + "albums/%d?auth_token=%s";
+    
+	private long placeCatId = -1;
+	private long placeId = -1;
+	private Handler handler;
+	
+	private ServiceConnection svcConn = new ServiceConnection() {
+		public void onServiceConnected(ComponentName className, IBinder binder) {
+			dataService = (IAuraOperations) binder;
+
+			try {
+				if (!dataService.isLoggedIn()) {
+					startActivity(new Intent(MainActivity.this, LoginActivity.class).setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP));
+					finish();
+				}
+				if(announceScreen != null ) {					
+					announceScreen.SetDataSession(dataService.getDataSession());
+					if(dataService.getDataSession().getMyProfile() == null) {
+						dataService.reloadProfile();
+					}
+					if(dataService.getDataSession().getCategories() == null) {
+						dataService.loadPlaceCategories();
+					}
+					if(dataService.getDataSession().getFollowedUsersCount() == 0){
+						dataService.loadFollowedUsers();
+					}
+					if(dataService.getDataSession().getSearchOptions() == null){
+						dataService.reloadSearchOptions();
+					}
+					
+					if(viewMode == ViewMode.INTERVIEW){
+						dataService.loadInterviewAlbums(searchQuery);
+					}
+					
+					requestLoadAlbumsForPlace();
+					if(!dataService.getDataSession().haveAlbumForFollowed()){
+						requestLoadAlbumsForFollowedUsers(searchQuery);
+					}
+			        // Check device for Play Services APK. If check succeeds, proceed with
+			        //  GCM registration.
+			        if (checkPlayServices()) {
+			            gcm = GoogleCloudMessaging.getInstance(MainActivity.this);
+			            regid = getRegistrationId(context);
+
+			            if (regid.isEmpty()) {
+			                registerInBackground();
+			            }
+			        } else {
+			            Log.i(TAG, "No valid Google Play Services APK found.");
+			        }					
+				}
+			} catch (Throwable t) {
+				Log.e(TAG, "Exception in onServiceConnected()", t);
+			}
+		}
+
+		public void onServiceDisconnected(ComponentName className) {
+			dataService = null;
+		}
+	};
+	
+	private BroadcastReceiver closeAllReceiver = new BroadcastReceiver() {		
+		@Override
+		public void onReceive(Context context, Intent intent) {
+			Log.i(TAG, "Received close all event, finishing");
+			finish();
+		}
+	};
+	
+	private BroadcastReceiver albumsStatusReceiver = new BroadcastReceiver() {
+		
+		@Override
+		public void onReceive(Context context, Intent intent) {
+			Log.i(TAG, "catched broadcast AuraDataSession.ACTION_LOAD_ALBUMS_RESULT");
+			int status = intent.getIntExtra(AuraDataSession.OPERATION_STATUS, AuraDataSession.STATUS_FAIL);
+			long place =  intent.getLongExtra(AuraDataSession.PLACE_ID, -1);
+			if(place >=0 && place != placeId) {				
+				return;
+			}
+			if(announceScreen != null) {
+				announceScreen.reloadData(); 
+			}
+			
+			if (status == AuraDataSession.STATUS_FAIL) {										
+				Log.i(TAG, "login failed, returning back to login view");
+				
+			} else {
+				Log.i(TAG, "login ok. ready for work, auth token " + dataService.getAuthTooken());
+				
+			}			
+		}
+	};
+
+	private Runnable watchdog = new Runnable() {
+		
+		@Override
+		public void run() {
+			if(announceScreen.isEmpty()){
+				Log.d(TAG, "albums watchdog");
+				announceScreen.reloadData();
+				handler.removeCallbacks(reloader);
+				handler.removeCallbacks(watchdog);
+				handler.postDelayed(watchdog, 10000);
+				handler.postDelayed(reloader, 1000);
+				
+			}
+		}
+	};
+	 
+	private Runnable reloader = new Runnable() {				
+		@Override
+		public void run() {
+			Log.d(TAG, "albums reloader");
+			if(dataService == null){
+			Log.d(TAG, "data service is null");
+				handler.removeCallbacks(reloader);
+				handler.postDelayed(reloader, 1000);
+				return;
+			}
+			if(!announceScreen.isEmpty()){
+			Log.d(TAG, "annomce screen is not empty");
+				return;
+			}
+			if(viewMode == MainActivity.ViewMode.MAIN){
+				if(!dataService.getDataSession().haveAlbums()){
+					dataService.loadAlbums(searchQuery, false);
+				}
+			}else if(viewMode == MainActivity.ViewMode.INTERVIEW){
+				if(!dataService.getDataSession().haveAlbums()){
+					dataService.loadAlbums(searchQuery, false);
+				}
+			}else if(viewMode == MainActivity.ViewMode.FOR_PLACE){
+				if(!dataService.getDataSession().haveAlbumForLastPlace()){
+					reqestSentForAlbumsForPlace = false;
+					requestLoadAlbumsForPlace();
+				}
+			}else if(viewMode == MainActivity.ViewMode.FRIENDS_PHOTO){
+				if(!dataService.getDataSession().haveAlbumForFollowed()){
+					reqestSentForAlbumsForFriends = false;
+					requestLoadAlbumsForFollowedUsers(searchQuery);
+				}
+			}			
+		}
+	};
+
+	private void refreshData(boolean force){
+		Log.d(TAG, "albums reload, force:" + force);
+		if(viewMode == MainActivity.ViewMode.MAIN){
+			dataService.loadAlbums(searchQuery, force);
+			announceScreen.clearList();
+		}else if(viewMode == MainActivity.ViewMode.INTERVIEW){
+			//force = true;
+			//if(force){
+				dataService.getDataSession().getInterviews().empty();
+				dataService.loadInterviewAlbums(searchQuery);
+			//}
+			
+		}else if(viewMode == MainActivity.ViewMode.FOR_PLACE){
+			reqestSentForAlbumsForPlace = force;
+			requestLoadAlbumsForPlace();
+		}else if(viewMode == MainActivity.ViewMode.FRIENDS_PHOTO){
+			reqestSentForAlbumsForFriends = force;
+			requestLoadAlbumsForFollowedUsers(searchQuery);
+		}			
+	}
+	
+	private BroadcastReceiver closeAll = new BroadcastReceiver() {		
+		@Override
+		public void onReceive(Context context, Intent intent) {
+			finish();
+		}
+	};
+	
+	public IAuraOperations getDataService() {
+		return dataService;
+	}
+	
+	@Override
+	protected void onCreate(Bundle savedInstanceState) {
+		super.onCreate(savedInstanceState);
+		BugSenseHandler.initAndStartSession(this, "eb2c8c8e");
+		setContentView(R.layout.activity_main);
+		
+		Log.w(TAG, "onCreate");
+		
+		handler = new Handler();
+		placeCatId = getIntent().getLongExtra(AuraBaseActivity.PARAM_CATEGORY_ID, -1);
+		placeId = getIntent().getLongExtra(AuraBaseActivity.PARAM_PLACE_ID, -1);
+				
+		viewMode = ViewMode.MAIN;
+		if(getIntent().getBooleanExtra(EXTRAS_KEY_INTERVIEW_ONLY, false)){
+			viewMode = ViewMode.INTERVIEW;			
+		}
+		
+		if(getIntent().getBooleanExtra(EXTRAS_KEY_FRIENDS_ONLY, false)){
+			viewMode = ViewMode.FRIENDS_PHOTO;
+		}
+		
+		if(placeId >= 0) {
+			viewMode = ViewMode.FOR_PLACE;
+		}
+		
+		switcher = (ViewFlipper) findViewById(R.id.switcher);
+		slideLeft = AnimationUtils.loadAnimation(this, android.R.anim.slide_in_left);
+		slideRight = AnimationUtils.loadAnimation(this, android.R.anim.slide_out_right);
+		switcher.setInAnimation(slideLeft);
+		switcher.setOutAnimation(slideRight);
+//		if(viewMode == ViewMode.MAIN){
+//			getActionBar().setTitle(getString(R.string.menu_announcement));
+//		} else if(viewMode == ViewMode.INTERVIEW){
+//			getActionBar().setTitle(getString(R.string.menu_interview));
+//		} else if(viewMode == ViewMode.FRIENDS_PHOTO){
+//			getActionBar().setTitle(getString(R.string.menu_friends_labels));
+//		} else {
+//			getActionBar().setTitle(getString(R.string.menu_announcement));
+//		}
+
+		if(viewMode == ViewMode.INTERVIEW){
+			getActionBar().setTitle(getString(R.string.menu_interview));
+		}
+		prepareViews();
+		if(viewMode == ViewMode.FOR_PLACE)
+			requestLoadAlbumsForPlace();
+		if(viewMode == ViewMode.FRIENDS_PHOTO)
+			requestLoadAlbumsForFollowedUsers(null);
+		
+        context = getApplicationContext();
+		
+	}
+
+	@Override
+	protected void onNewIntent(Intent intent) {
+		super.onNewIntent(intent);
+		Log.w(TAG, "onNewIntent");
+	}
+	
+    private void prepareViews() {
+		//list view
+    	Log.w(TAG, "prepareViews");
+		annList = ViewFlipper.inflate(this, R.layout.announcements_list, null);
+		switcher.addView(annList, 0);
+		announceScreen = new AnnouncementScreen(annList, this, viewMode);		
+		switcher.setDisplayedChild(0);
+		if(dataService != null) {
+			announceScreen.SetDataSession(dataService.getDataSession());
+		}
+    }
+
+    @Override
+    protected void onStart() {
+    	super.onStart();
+    	bindService(new Intent(this, AuraDataService.class), svcConn, BIND_AUTO_CREATE);
+    	LocalBroadcastManager.getInstance(this).registerReceiver(albumsStatusReceiver, new IntentFilter(AuraDataSession.ACTION_LOAD_ALBUMS_RESULT));
+    	
+    	LocalBroadcastManager
+		.getInstance(this)
+		.registerReceiver(closeAllReceiver, new IntentFilter(AuraDataSession.ACTION_CLOSE_ALL_SCREENS));
+    	
+    	LocalBroadcastManager
+		.getInstance(this)
+		.registerReceiver(simpleGetReceiver, new IntentFilter(AuraDataSession.ACTION_HTTP_GET_RESULT));
+    	
+    }
+    
+    @Override
+    protected void onStop() {
+    	super.onStop();
+    	unbindService(svcConn);
+    	LocalBroadcastManager.getInstance(this).unregisterReceiver(albumsStatusReceiver);
+    	LocalBroadcastManager.getInstance(this).unregisterReceiver(closeAllReceiver);
+    	LocalBroadcastManager.getInstance(this).unregisterReceiver(simpleGetReceiver);
+    }
+    
+    @Override
+    protected void onResume() {
+    	super.onResume();
+    	Log.d(TAG, "onResume");
+    	
+    	checkPlayServices();
+    	
+		if (dataService != null && !dataService.isLoggedIn()) {
+			startActivity(new Intent(MainActivity.this, LoginActivity.class).setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP));
+			finish();
+		}
+		handler.removeCallbacks(watchdog);
+		handler.postDelayed(watchdog, 5000);
+    	checkDataAndScheduleUpdate(3000);
+    	//announceScreen.reloadData();
+    }
+    
+    
+    @Override
+    protected void onPause() {
+    	super.onPause();
+    	Log.d(TAG, "onPause");
+    	handler.removeCallbacks(reloader);
+    	handler.removeCallbacks(watchdog);
+    }
+    
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        // Inflate the menu; this adds items to the action bar if it is present.
+        MenuInflater inflater = getMenuInflater();
+        inflater.inflate(R.menu.main_menu, menu);
+        if(viewMode == ViewMode.INTERVIEW || viewMode == ViewMode.MAIN) {
+        	SearchView searchView = (SearchView) menu.findItem(R.id.action_search).getActionView();
+        	searchView.setOnQueryTextListener(this);
+        	searchView.setOnCloseListener(this);
+        } else {
+        	menu.removeItem(R.id.action_search);
+        }
+        return true;
+    }
+    
+    @Override
+    public boolean onPrepareOptionsMenu(Menu menu) {    	
+    	if(viewMode == ViewMode.INTERVIEW) {
+    		menu.removeItem(R.id.menu_interview);
+    	} else if(viewMode == ViewMode.MAIN){
+    		menu.removeItem(R.id.menu_announcement);
+    	} else if(viewMode == ViewMode.FRIENDS_PHOTO){
+    		menu.removeItem(R.id.menu_friends_labels);
+    	}
+    	return super.onPrepareOptionsMenu(menu);
+    	
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+    	switch (item.getItemId()) {    		
+    	case R.id.menu_announcement:
+			startActivity(new Intent(this, MainActivity.class).putExtra(EXTRAS_KEY_INTERVIEW_ONLY, false));
+			finish();
+    		return true;
+    	case R.id.menu_friends_labels:
+    		startActivity(new Intent(this, MainActivity.class).putExtra(EXTRAS_KEY_FRIENDS_ONLY, true));
+			finish();
+    		break;
+    	case R.id.menu_interview:
+    			startActivity(new Intent(this, MainActivity.class).putExtra(EXTRAS_KEY_INTERVIEW_ONLY, true));
+    			finish();
+    		return true;
+    	case R.id.menu_places:
+    		startActivity(new Intent(this, PlaceCategorisListActivity.class));
+    		break;
+    	case R.id.menu_profile:
+    		startActivity(new Intent(this, ProfileActivity.class));    		
+    		break;
+    	case R.id.menu_refresh:
+    		refreshData(true);
+    		break;
+    	case R.id.menu_exit:
+    		showExitAlert();
+    		break;
+    	}
+    	return super.onOptionsItemSelected(item);
+    }
+    
+	private BroadcastReceiver simpleGetReceiver = new BroadcastReceiver() {		
+		@Override
+		public void onReceive(Context context, Intent intent) {
+			Log.i(TAG, "catched broadcast AuraDataSession.ACTION_HTTP_GET_RESULT");
+			int status = intent.getIntExtra(AuraDataSession.OPERATION_STATUS, AuraDataSession.STATUS_FAIL);						
+			long id = intent.getLongExtra(AuraDataSession.SIMPLE_GET_ID, -1);
+			if(status != AuraDataSession.STATUS_FAIL) {
+				if(id != -1 && id == loadAlbumReqId){
+					try {						
+							String qRes = dataService.getDataSession().getSimpleHttpResponse(loadAlbumReqId);		
+							Gson gson = BaseGetApiCommand.getGson();		
+							Album alb  =  gson.fromJson(qRes, Album.class);
+							viewAlbum(alb);
+						
+					} catch (JsonSyntaxException e) {
+						Log.e(TAG, "bad json comes from server", e);
+					}										
+				}
+			}
+		}
+	};
+	
+	private void viewAlbum(Album alb){
+		if(alb == null){
+			return;
+		}
+		if(alb.isInterview()) {
+			InterviewDisplayActivity.showInterview(alb.getId(), this);
+		} else {
+			startActivity(new Intent(this, AlbumContentActivity.class).putExtra(AlbumContentActivity.PARAM_ALBUM_ID, alb.getId()));
+		}		
+	}
+
+
+	
+    private void requestLoadAlbumById(long albId) {    	
+    	String url = String.format(loadAlbumUrlBase, albId,dataService.getDataSession().getAuthTooken());
+    	loadAlbumReqId = System.currentTimeMillis();
+    	dataService.executeSimpleGet(loadAlbumReqId, url);
+    }
+    
+    public void showAlbumContent(long albumId) {
+    	Log.d(TAG, "showAlbumContent " + Long.toString(albumId));
+    	requestLoadAlbumById(albumId);
+    }
+
+	@Override
+	public boolean onQueryTextChange(String newText) {
+		return false;
+	}
+
+	@Override
+	public boolean onQueryTextSubmit(String query) {
+		Log.d(TAG, "searching for:" + query);
+		searchQuery = query;
+		if(viewMode == ViewMode.MAIN){
+			dataService.loadAlbums(searchQuery, true);
+			announceScreen.clearList();
+		} else if(viewMode == ViewMode.INTERVIEW) {
+			LoadedAlbumsKeeper interv = dataService.getDataSession().getInterviews();
+			interv.empty();
+			announceScreen.clearList();
+		}
+		return true;
+	}
+	
+	@Override
+	public boolean onClose() {
+		searchQuery = "";
+		if(viewMode == ViewMode.MAIN){
+			dataService.loadAlbums(searchQuery, true);
+			announceScreen.clearList();
+		} else if(viewMode == ViewMode.INTERVIEW){
+			LoadedAlbumsKeeper interv = dataService.getDataSession().getInterviews();
+			interv.empty();
+			announceScreen.clearList();
+		}
+		return false;
+	}
+	
+	
+	public Pair<Long, Long> getPlaceId(){
+		return Pair.create(placeCatId, placeId);
+	}
+
+	private boolean reqestSentForAlbumsForPlace = false;
+	private void requestLoadAlbumsForPlace() {
+		if(placeId >= 0 && getDataService()!= null && !reqestSentForAlbumsForPlace ) {
+			getDataService().loadAlbums(placeId);
+			reqestSentForAlbumsForPlace = true;
+		}
+	}
+	
+	private boolean reqestSentForAlbumsForFriends = false;
+	protected  void requestLoadAlbumsForFollowedUsers(String query) {
+		if(viewMode == ViewMode.FRIENDS_PHOTO && getDataService()!= null && !reqestSentForAlbumsForFriends) {
+			getDataService().loadAlbumsFollowedUsers(query);
+			reqestSentForAlbumsForFriends = true;
+		}
+	}
+	
+	public void checkDataAndScheduleUpdate(long msec){
+		handler.postDelayed(reloader, msec);		
+	}
+	
+	public void showExitAlert() {
+		AlertDialog.Builder alertDialogBuilder = new AlertDialog.Builder(this);
+		 
+		// set title
+		alertDialogBuilder.setTitle(R.string.settings_title_exit);
+
+		// set dialog message
+		alertDialogBuilder
+			.setMessage(R.string.alert_exit)
+			.setCancelable(false)
+			.setNegativeButton(R.string.no, new DialogInterface.OnClickListener() {							
+				@Override
+				public void onClick(DialogInterface dialog, int which) {
+					//do nothing
+				}
+			})
+			.setPositiveButton(R.string.yes, new DialogInterface.OnClickListener() {
+				public void onClick(DialogInterface dialog,int id) {
+					dataService.logout();
+		    		finish();
+				}
+			  }); 
+			// create alert dialog
+			AlertDialog alertDialog = alertDialogBuilder.create(); 
+			// show it
+			alertDialog.show();						
+	}	
+
+	/**
+	 * Gets the current registration ID for application on GCM service.
+	 * <p>
+	 * If result is empty, the app needs to register.
+	 *
+	 * @return registration ID, or empty string if there is no existing
+	 *         registration ID.
+	 */
+	private String getRegistrationId(Context context) {
+	    final SharedPreferences prefs = getGCMPreferences(context);
+	    String registrationId = prefs.getString(PROPERTY_REG_ID, "");
+	    if (registrationId.isEmpty()) {
+	        Log.i(TAG, "Registration not found.");
+	        return "";
+	    }
+	    // Check if app was updated; if so, it must clear the registration ID
+	    // since the existing regID is not guaranteed to work with the new
+	    // app version.
+	    int registeredVersion = prefs.getInt(PROPERTY_APP_VERSION, Integer.MIN_VALUE);
+	    int currentVersion = getAppVersion(context);
+	    if (registeredVersion != currentVersion) {
+	        Log.i(TAG, "App version changed.");
+	        return "";
+	    }
+	    return registrationId;
+	}
+	
+	/**
+	 * Stores the registration ID and app versionCode in the application's
+	 * {@code SharedPreferences}.
+	 *
+	 * @param context application's context.
+	 * @param regId registration ID
+	 */
+	private void storeRegistrationId(Context context, String regId) {
+	    final SharedPreferences prefs = getGCMPreferences(context);
+	    int appVersion = getAppVersion(context);
+	    Log.i(TAG, "Saving regId on app version " + appVersion);
+	    SharedPreferences.Editor editor = prefs.edit();
+	    editor.putString(PROPERTY_REG_ID, regId);
+	    editor.putInt(PROPERTY_APP_VERSION, appVersion);
+	    editor.commit();
+	}	
+	
+	/**
+	 * @return Application's {@code SharedPreferences}.
+	 */
+	private SharedPreferences getGCMPreferences(Context context) {
+	    return getSharedPreferences(Preferences.PREF_STORAGE_NAME,Context.MODE_PRIVATE);
+	}
+	
+	
+	/**
+	 * Check the device to make sure it has the Google Play Services APK. If
+	 * it doesn't, display a dialog that allows users to download the APK from
+	 * the Google Play Store or enable it in the device's system settings.
+	 */
+	private boolean checkPlayServices() {
+	    int resultCode = GooglePlayServicesUtil.isGooglePlayServicesAvailable(this);
+	    if (resultCode != ConnectionResult.SUCCESS) {	        
+	        return false;
+	    }
+	    return true;
+	}
+	
+	/**
+	 * @return Application's version code from the {@code PackageManager}.
+	 */
+	private static int getAppVersion(Context context) {
+	    try {
+	        PackageInfo packageInfo = context.getPackageManager()
+	                .getPackageInfo(context.getPackageName(), 0);
+	        return packageInfo.versionCode;
+	    } catch (NameNotFoundException e) {
+	        // should never happen
+	        throw new RuntimeException("Could not get package name: " + e);
+	    }
+	}	
+
+	public String getSearchQuery(){
+		return searchQuery;
+	}
+	
+	/**
+	 * Registers the application with GCM servers asynchronously.
+	 * <p>
+	 * Stores the registration ID and app versionCode in the application's
+	 * shared preferences.
+	 */
+	private void registerInBackground() {
+	    new AsyncTask<Void, Void, String>() {
+	        @Override
+	        protected String doInBackground(Void... params) {
+	            String msg = "";
+	            try {
+	                if (gcm == null) {
+	                    gcm = GoogleCloudMessaging.getInstance(context);
+	                }
+	                regid = gcm.register(SENDER_ID);
+	                msg = "Device registered, registration ID=" + regid;
+
+	                // You should send the registration ID to your server over HTTP,
+	                // so it can use GCM/HTTP or CCS to send messages to your app.
+	                // The request to your server should be authenticated if your app
+	                // is using accounts.
+	                sendRegistrationIdToBackend();
+
+	                // For this demo: we don't need to send it because the device
+	                // will send upstream messages to a server that echo back the
+	                // message using the 'from' address in the message.
+
+	                // Persist the regID - no need to register again.
+	                storeRegistrationId(context, regid);
+	            } catch (IOException ex) {
+	                msg = "Error :" + ex.getMessage();
+	                // If there is an error, don't just keep trying to register.
+	                // Require the user to click a button again, or perform
+	                // exponential back-off.
+	            }
+	            return msg;
+	        }
+
+	        @Override
+	        protected void onPostExecute(String msg) {
+	            Log.i(TAG, msg);
+	        }
+	    }.execute(null, null, null);
+	}	
+	
+	private void sendRegistrationIdToBackend() {
+		dataService.sendRegId(regid);
+	}
+	
+}

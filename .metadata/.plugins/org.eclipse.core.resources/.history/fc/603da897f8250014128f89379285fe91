@@ -1,0 +1,231 @@
+package com.aod.clubapp;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import com.aod.clubapp.communicaton.datamodel.Album;
+import com.aod.clubapp.communicaton.datamodel.AuraDataSession;
+import com.aod.clubapp.communicaton.datamodel.Comment;
+import com.aod.clubapp.communicaton.datamodel.Photo;
+import com.viewpagerindicator.CirclePageIndicator;
+import android.app.Activity;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.os.Bundle;
+import android.support.v4.content.LocalBroadcastManager;
+import android.support.v4.view.ViewPager;
+import android.util.Log;
+import android.util.Pair;
+import android.view.View;
+import android.widget.ListView;
+import android.widget.TextView;
+
+
+public class InterviewDisplayActivity extends AuraBaseActivityFullscreen {
+	public static final String TAG = "InterviewDisplayActivity"; 
+
+	private ViewPager pager;
+	private AlbumPagerAdapter adapter;
+	private CirclePageIndicator indicator;
+	private TextView likesCount;
+	private ListView listView;
+	private long albumId;
+	private long photoId = -1;
+	private Album album;
+	private Map<Long, List<Comment>> albumComments = new HashMap<Long, List<Comment>>();
+	private boolean initializationDone = false;
+	
+	private BroadcastReceiver commentsReceiver = new BroadcastReceiver() {		
+		@Override
+		public void onReceive(Context context, Intent intent) {
+			Log.i(TAG, "catched broadcast AuraDataSession.ACTION_LOAD_COMMENTS_RESULT");
+			int status = intent.getIntExtra(AuraDataSession.OPERATION_STATUS, AuraDataSession.STATUS_FAIL);						
+			long id = intent.getLongExtra(AuraDataSession.PHOTO_ID, -1);
+			Log.i(TAG, "catched broadcast AuraDataSession.ACTION_LOAD_COMMENTS_RESULT photo id = " + id);
+			if (status == AuraDataSession.STATUS_FAIL) {				
+				Log.i(TAG, "commentsReceiver operation failed");				
+			} else {
+				if(readLastComments() == photoId) {
+					updatePhotoInfo();
+				}
+			}			
+		}
+	};
+	
+	public static void showInterview(long albumId,  Activity cntx) {
+//		Log.d(TAG, "showInterview album id= " + Long.toString(albumId));
+//		Intent intent = new Intent(cntx, InterviewDisplayActivity.class).putExtra(PARAM_ALBUM_ID, albumId);
+//    	cntx.startActivity(intent);
+		FriendsPhotoViewActivity.showInterviewPhotos(albumId, cntx);
+	}
+	
+	@Override
+	public void onDataServiceConnected() {
+		Log.d(TAG, "onDataServiceConnected");	
+		super.onDataServiceConnected();
+		fillContent();
+	}
+
+	@Override
+	public void onDataServiceDisConnected() {
+		Log.d(TAG, "onDataServiceDisConnected");
+
+	}
+	
+    @Override
+    protected void onStart() {
+    	super.onStart();
+    	LocalBroadcastManager.getInstance(this).registerReceiver(commentsReceiver, new IntentFilter(AuraDataSession.ACTION_LOAD_COMMENTS_RESULT));
+    }
+    
+    @Override
+    protected void onStop() {
+    	super.onStop();
+    	LocalBroadcastManager.getInstance(this).unregisterReceiver(commentsReceiver);
+    }
+    
+	@Override
+	protected void onCreate(Bundle savedInstanceState) {
+		super.onCreate(savedInstanceState);	
+		setContentView(R.layout.activity_interview_view);
+		final View controlsView = findViewById(R.id.fullscreen_content_controls);
+		final View contentView = findViewById(R.id.fullscreen_content);
+		listView = (ListView) findViewById(R.id.comments_list);
+		likesCount = (TextView) findViewById(R.id.tv_likes_count);
+		albumId = getIntent().getLongExtra(PARAM_ALBUM_ID, -1);
+		pager = (ViewPager)findViewById(R.id.pager);
+		indicator = (CirclePageIndicator)findViewById(R.id.indicator);
+		
+		setupSystemUiHider(controlsView, contentView);
+		//setupSystemUiHider(controlsView, pager);
+		fillContent();
+	}
+	
+	private void fillContent() {
+		if(getDataSession() == null)
+			return;
+		if(initializationDone)
+			return;
+		if(pager != null) {
+			Log.d(TAG, "fillContent() albumid=" + Long.toString(albumId));
+			album = getDataSession().getAlbumById(albumId);
+			updateActionBarTitle(album);
+			adapter = new AlbumPagerAdapter(getSupportFragmentManager(), album);
+			pager.setAdapter(adapter);
+	        indicator.setViewPager(pager);
+	        
+	        //We set this on the indicator, NOT the pager
+	        indicator.setOnPageChangeListener(new ViewPager.OnPageChangeListener() {
+	            @Override
+	            public void onPageSelected(int position) {
+	            	Log.d(TAG, "view pager new position is " + position);
+	            	if(album != null) {
+	            		Photo pht = album.getPhotoByPosition(position);
+	            		if(pht == null) {
+	            			Log.e(TAG, "inconsistend data, album does not have photo as position " + position);
+
+	            		} else {
+	            			photoId = pht.getId();
+	            			Log.d(TAG, "selected photo " + photoId);
+	            			updatePhotoInfo();
+	            		}
+	            	}
+	            }
+
+	            @Override
+	            public void onPageScrolled(int position, float positionOffset, int positionOffsetPixels) {
+	            }
+
+	            @Override
+	            public void onPageScrollStateChanged(int state) {
+	            }
+	        });
+	        //select first photo in view pager
+	        indicator.setCurrentItem(0);
+	        Photo pht = album.getPhotoByPosition(0);
+	        if(pht != null) {
+    			photoId = pht.getId();
+	        }
+	        updatePhotoInfo();
+	        initializationDone = true;
+		}
+	}
+
+	private void updateLikesCount(Photo photo ){
+		if(likesCount != null && photo != null) {
+			updateLikesCound(likesCount, photo.getLikesCount(), photo.isLiked());
+		}		
+	}
+	
+	private void updatePhotoInfo(){
+		Log.d(TAG, "updating view for photoid =" + photoId);
+		Photo photo = album.getPhotoById(photoId);
+		if(photo != null) {			
+			updateLikesCount(photo);
+			List<Comment> comments = albumComments.get(photoId);
+			if(comments == null){
+				Log.d(TAG, "Not loaded yet comments for photo " + photoId);
+				//load absent comments
+				hideListView();
+				getLocalService().loadCommentsForPhoto(photoId);
+			} else {
+				//set listview content
+				if(comments != null && comments.size() > 0) {
+					showListView();
+					CommentsListAdapter adapter = new CommentsListAdapter(this, comments.toArray(new Comment[comments.size()]));
+					listView.setAdapter(adapter);					
+				} else {
+					hideListView();
+				}				
+			}
+		}
+	}
+	
+	private void hideListView() {
+		//listView.setAdapter(null);
+		//listView.setVisibility(View.GONE);
+		//findViewById(R.id.bottom_delimiter).setVisibility(View.GONE);
+		
+	}
+	private void showListView() {
+		listView.setVisibility(View.VISIBLE);
+		findViewById(R.id.bottom_delimiter).setVisibility(View.VISIBLE);
+	}
+	private long readLastComments() {
+		Pair<Long, List<Comment>> pair = getDataSession().getLastComments();		
+		if(album.getPhotoById(pair.first)!= null ) {
+			albumComments.put(pair.first, pair.second);			
+			return pair.first;
+		}
+		return pair.first;
+	}
+	
+	public void onLikeClick(View v){
+		Log.d(TAG, "onLikeClick");
+		if(photoId > 0 && album != null) {
+			Photo photo = album.getPhotoById(photoId);
+			if(photo != null) {
+				if(photo.isLiked()) {
+					photo.decLikesCount();
+					photo.setLiked(false);
+					getLocalService().likePhoto(photoId);
+				} else {
+					photo.incLikesCount();
+					photo.setLiked(true);
+					getLocalService().unLikePhoto(photoId);
+				}
+				updateLikesCount(photo);
+			}			
+		}
+	}
+			
+	public void onAddCommentsClick(View v){
+		Log.d(TAG, "onAddCommentsClick");
+		if(photoId > 0) {
+			CommentsListActivity.showCommentsActivity(albumId, photoId, this);
+		}
+	}	
+}

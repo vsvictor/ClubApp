@@ -1,0 +1,401 @@
+package com.aod.clubapp.communicaton;
+
+import java.io.File;
+import java.io.IOException;
+import android.annotation.SuppressLint;
+import android.app.ActivityManager;
+import android.app.ActivityManager.MemoryInfo;
+import android.app.Service;
+import android.content.Intent;
+import android.net.http.HttpResponseCache;
+import android.os.AsyncTask;
+import android.os.Binder;
+import android.os.IBinder;
+import android.support.v4.content.LocalBroadcastManager;
+import android.text.TextUtils;
+import android.util.Log;
+import android.util.Pair;
+import com.aod.clubapp.communicaton.auraapi.AddUserTagCommand;
+import com.aod.clubapp.communicaton.auraapi.IApiCommand;
+import com.aod.clubapp.communicaton.auraapi.LikePhotoCommand;
+import com.aod.clubapp.communicaton.auraapi.LoadDialogsCommand;
+import com.aod.clubapp.communicaton.auraapi.LoadFollowedUsersCommand;
+import com.aod.clubapp.communicaton.auraapi.LoadPlacesCommand;
+import com.aod.clubapp.communicaton.auraapi.LoadSearchOptionsCommand;
+import com.aod.clubapp.communicaton.auraapi.PostDialogMessageCommand;
+import com.aod.clubapp.communicaton.auraapi.PostRegIdCommand;
+import com.aod.clubapp.communicaton.auraapi.ReloadNewsCommand;
+import com.aod.clubapp.communicaton.auraapi.ReloadPlaceCategoriesCommand;
+import com.aod.clubapp.communicaton.auraapi.ReloadProfile;
+import com.aod.clubapp.communicaton.auraapi.RemoveChatMessage;
+import com.aod.clubapp.communicaton.auraapi.SendComment;
+import com.aod.clubapp.communicaton.auraapi.SignIn;
+import com.aod.clubapp.communicaton.auraapi.SignUp;
+import com.aod.clubapp.communicaton.auraapi.SimpleGetCommand;
+import com.aod.clubapp.communicaton.auraapi.SimplePostCommand;
+import com.aod.clubapp.communicaton.auraapi.SimplePutCommand;
+import com.aod.clubapp.communicaton.auraapi.SubscribeCommand;
+import com.aod.clubapp.communicaton.datamodel.AlbumsLoaderTask;
+import com.aod.clubapp.communicaton.datamodel.AuraDataSession;
+import com.aod.clubapp.communicaton.datamodel.CommentsLoaderTask;
+import com.aod.clubapp.communicaton.datamodel.InverviewLoaderTask;
+import com.aod.clubapp.communicaton.datamodel.LoadedAlbumsKeeper;
+import com.bugsense.trace.BugSenseHandler;
+
+/**
+ * Service that executes all REST request (in separated threads) and store data
+ * 
+ * @author Anatoliy Odukha <aodukha@gmail.com>
+ */
+public class AuraDataService extends Service {
+	public static final String TAG = "AuraDataService";
+	private static  long HTTP_CACHE_SIZE = 64 * 1024 * 1024; // XX MiB
+	private final Binder binder = new LocalBinder();
+	private AuraDataSession session;
+	
+	public AuraDataService(){
+		super();
+		HTTP_CACHE_SIZE = getRamTotal()/4;
+	}
+	
+	@Override
+	public void onCreate() {
+		super.onCreate();
+		Log.d(TAG, "onCreate");
+		BugSenseHandler.initAndStartSession(this, "eb2c8c8e");
+		HttpResponseCache cache = HttpResponseCache.getInstalled();
+		if (cache == null) {
+			try {
+				File httpCacheDir = new File(getCacheDir(), "http");
+				long httpCacheSize = HTTP_CACHE_SIZE;
+				HttpResponseCache.install(httpCacheDir, httpCacheSize);
+			} catch (IOException e) {
+				Log.i(TAG, "HTTP response cache installation failed:" + e);
+			}
+		}
+		session = new AuraDataSession(this);
+		session.restoreState();
+	}
+	
+	@Override
+	public void onDestroy() {
+		super.onDestroy();
+		session.storeSessionData(this);
+		session.saveState();
+		Log.d(TAG, "onDesroy");
+		HttpResponseCache cache = HttpResponseCache.getInstalled();
+		if (cache != null) {
+			cache.flush();
+		}
+	}
+	
+	@Override
+	public int onStartCommand(Intent intent, int flags, int startId) {
+		Log.d(TAG, "onStartCommand");
+		//return Service.START_REDELIVER_INTENT;
+		return Service.START_STICKY;
+	}
+	
+	@Override
+	public IBinder onBind(Intent intent) {
+		Log.d(TAG, "onBind");
+		return binder;
+	}
+
+	private class ApiCommandExecutor extends AsyncTask<IApiCommand, Void, Void> {
+		IApiCommand target;
+		@Override
+		protected Void doInBackground(IApiCommand... params) {
+			target = params[0];
+			target.run();
+			return null;
+		}
+		
+		@Override
+		protected void onPostExecute(Void result) {
+			if(target.isFailed()) {
+				target.onFailExecution(AuraDataService.this);
+			} else {
+				target.onSuccesExecution(AuraDataService.this);
+			}
+		}		
+	}
+	
+	public class LocalBinder extends Binder implements IAuraOperations {
+
+		@Override
+		public void initiateLogin(String user, String password) {
+			Log.d(TAG, "initiateLogin");
+			SignIn command = new SignIn(user, password, session);
+			AsyncTask<IApiCommand, Void, Void> task = new ApiCommandExecutor().executeOnExecutor(ApiCommandExecutor.THREAD_POOL_EXECUTOR, command);						
+		}
+
+		@Override
+		public boolean isLoggedIn() {
+			return session.isLoggedIn();
+		}
+
+		@Override
+		public String getAuthTooken() {
+			return session.getAuthTooken();
+		}
+
+		@Override
+		public boolean isAdmin() {
+			Log.d(TAG, "isAdmin");
+			return session.isAdmin();
+		}
+
+		@Override
+		public void initiateRegistration(String username, String email, String password) {
+			Log.d(TAG, "initiateLogin");
+			SignUp command = new SignUp(username, email, password, session);
+			AsyncTask<IApiCommand, Void, Void> task = new ApiCommandExecutor().executeOnExecutor(ApiCommandExecutor.THREAD_POOL_EXECUTOR, command);
+		}
+		String lastLoadAllAlbumsQuery = "";
+
+		@Override
+		public void loadAlbums(String query, boolean force) {
+			
+			
+			if(!force && session.getAlbums() !=null && session.getAlbums().size() > 0 && TextUtils.isEmpty(query)){
+				Log.d(TAG, "reuse cached albums");
+				return;
+			}
+
+			if(force){
+				Log.d(TAG, "loadAlbums: force");
+				session.getEventsAlbums().empty();
+			}
+			Log.d(TAG, "loadAlbums: for " + (session.getLastLoadedAlbumsPageIndx() +1));
+			AsyncTask<AuraDataSession, Void, Void> task = new AlbumsLoaderTask(session.getAuthTooken(), query, session.getLastLoadedAlbumsPageIndx() +1).execute( session);
+			albLastRequestedPage = 0;
+			lastLoadAllAlbumsQuery = query;
+			if(TextUtils.isEmpty(lastLoadAllAlbumsQuery)){
+				lastLoadAllAlbumsQuery = "";
+			}
+
+		}
+		
+		int albLastRequestedPage = 0;
+		long lastNextPageReqTime = 0;
+		@Override
+		public void loadAlbumsNextPage(String query){
+			if(albLastRequestedPage < session.getLastLoadedAlbumsPageIndx() || (System.currentTimeMillis() - lastNextPageReqTime) > 3000){
+				AsyncTask<AuraDataSession, Void, Void> task = new AlbumsLoaderTask(session.getAuthTooken(), query, session.getLastLoadedAlbumsPageIndx() +1).execute( session);
+				lastNextPageReqTime = System.currentTimeMillis();
+				albLastRequestedPage =session.getLastLoadedAlbumsPageIndx() +1; 
+			}
+		}
+
+		@Override
+		public void loadAlbums(long placeId) {
+			Log.d(TAG, "loadAlbums, placeid = " + placeId);
+			AsyncTask<AuraDataSession, Void, Void> task = new AlbumsLoaderTask(session.getAuthTooken() , "", 0, placeId).execute( session);
+			
+		}
+
+		@Override
+		public AuraDataSession getDataSession() {
+			return session;
+		}
+
+		@Override
+		public void loadCommentsForPhoto(long id) {
+			Log.d(TAG, "loadCommentsForPhoto id=" + id);
+			AsyncTask<Pair<AuraDataSession, Long>, Void, Void> task = new CommentsLoaderTask(session.getAuthTooken()).execute( Pair.create(session, id));
+		}
+
+		@Override
+		public void likePhoto(long photoId) {
+			Log.d(TAG, "likePhoto id=" + photoId);
+			if(photoId >= 0){
+				session.processPhotoChangesLike(photoId, true);
+				LikePhotoCommand command = new LikePhotoCommand(session.getAuthTooken(), photoId);
+				new ApiCommandExecutor().executeOnExecutor(ApiCommandExecutor.THREAD_POOL_EXECUTOR, command);
+				
+			} else {
+				Log.d(TAG, "likePhoto unexpected id");				
+			}
+		}
+
+		@Override
+		public void unLikePhoto(long photoId) {
+			Log.d(TAG, "unLikePhoto id=" + photoId);
+			if(photoId >= 0){
+				session.processPhotoChangesLike(photoId, false);				
+				LikePhotoCommand command = new LikePhotoCommand(session.getAuthTooken(), photoId, true);
+				new ApiCommandExecutor().executeOnExecutor(ApiCommandExecutor.THREAD_POOL_EXECUTOR, command);
+			} else {
+				Log.d(TAG, "unLikePhoto unexpected id");				
+			}			
+			
+		}
+
+		@Override
+		public void postCommentForPhoto(long photoId, String commentBody) {
+			Log.d(TAG, "postCommentForPhoto id=" + photoId);
+			if(photoId >= 0){
+				SendComment command = new SendComment(session, photoId, commentBody);
+				AsyncTask<IApiCommand, Void, Void> task = new ApiCommandExecutor().executeOnExecutor(ApiCommandExecutor.THREAD_POOL_EXECUTOR, command);
+			} else {
+				Log.d(TAG, "unLikePhoto unexpected id");				
+			}						
+		}
+
+		@Override
+		public void updateProfile() {
+			// TODO Auto-generated method stub
+			Log.d(TAG, "updateProfile");
+		}
+
+		@Override
+		public void reloadProfile() {
+			Log.d(TAG, "reloadProfile");
+			ReloadProfile command = new ReloadProfile (session);
+			AsyncTask<IApiCommand, Void, Void> task = new ApiCommandExecutor().executeOnExecutor(ApiCommandExecutor.THREAD_POOL_EXECUTOR, command);			
+		}
+
+		@Override
+		public void logout() {
+			Log.d(TAG, "logout()");
+			LocalBroadcastManager brdMannager = LocalBroadcastManager.getInstance(AuraDataService.this);
+			brdMannager.sendBroadcast(new Intent(AuraDataSession.ACTION_CLOSE_ALL_SCREENS));
+			AuraDataSession.clearState(AuraDataService.this);
+			session.logout();
+			session = new AuraDataSession(AuraDataService.this);
+		}
+
+		@Override
+		public void loadPlaceCategories() {
+			Log.d(TAG, "reloadProfile");
+			ReloadPlaceCategoriesCommand command = new ReloadPlaceCategoriesCommand (session);
+			AsyncTask<IApiCommand, Void, Void> task = new ApiCommandExecutor().executeOnExecutor(ApiCommandExecutor.THREAD_POOL_EXECUTOR, command);			
+		}
+
+		@Override
+		public void loadPlacesInCategory(long category) {
+			Log.d(TAG, "loadPlacesInCategory " + category);
+			LoadPlacesCommand command = new LoadPlacesCommand(session, category);
+			AsyncTask<IApiCommand, Void, Void> task = new ApiCommandExecutor().executeOnExecutor(ApiCommandExecutor.THREAD_POOL_EXECUTOR, command);
+		}
+
+		@Override
+		public void loadAlbumsFollowedUsers(String query) {
+			Log.d(TAG, "loadAlbumsFollowedUsers");
+			AsyncTask<AuraDataSession, Void, Void> task = new AlbumsLoaderTask(session.getAuthTooken() , null, 0, true).execute( session);			
+		}
+
+		@Override
+		public void loadFollowedUsers() {
+			Log.d(TAG, "loadFollowedUsers");
+			LoadFollowedUsersCommand command = new LoadFollowedUsersCommand(session.getCurrentUserId(), session);
+			AsyncTask<IApiCommand, Void, Void> task = new ApiCommandExecutor().executeOnExecutor(ApiCommandExecutor.THREAD_POOL_EXECUTOR, command);			
+		}
+
+		@Override
+		public void loadNews() {
+			Log.d(TAG, "loadNews");
+			ReloadNewsCommand command = new ReloadNewsCommand(session);
+			AsyncTask<IApiCommand, Void, Void> task = new ApiCommandExecutor().executeOnExecutor(ApiCommandExecutor.THREAD_POOL_EXECUTOR, command);
+		}
+
+		@Override
+		public void loadDialogs() {
+			Log.d(TAG, "loadDialogs");
+			LoadDialogsCommand command = new LoadDialogsCommand(session);
+			new ApiCommandExecutor().executeOnExecutor(ApiCommandExecutor.THREAD_POOL_EXECUTOR, command);
+		}
+
+		@Override
+		public void executeSimpleGet(long requestId, String url) {
+			Log.d(TAG, "executeSimpleGet");
+			SimpleGetCommand command = new SimpleGetCommand(session, requestId, url);
+			new ApiCommandExecutor().executeOnExecutor(ApiCommandExecutor.THREAD_POOL_EXECUTOR, command);
+		}
+
+		@Override
+		public void markUserOnPhoto(long userId, long photoId, float x) {
+			Log.d(TAG, "markUserOnPhoto");
+			session.processPhotoChangesAddTag(userId, photoId, x);
+			AddUserTagCommand command = new AddUserTagCommand(session.getAuthTooken(), userId, photoId, x);
+			new ApiCommandExecutor().executeOnExecutor(ApiCommandExecutor.THREAD_POOL_EXECUTOR, command);
+		}
+
+		@Override
+		public void postDialogMessage(long dialogId, String msgBody) {
+			PostDialogMessageCommand command = new PostDialogMessageCommand(session.getAuthTooken(), dialogId, msgBody);
+			new ApiCommandExecutor().executeOnExecutor(ApiCommandExecutor.THREAD_POOL_EXECUTOR, command);			
+		}
+
+		@Override
+		public void subscribeFor(long userId) {
+			SubscribeCommand command = new SubscribeCommand(userId, false, session);
+			new ApiCommandExecutor().executeOnExecutor(ApiCommandExecutor.THREAD_POOL_EXECUTOR, command);
+			
+		}
+
+		@Override
+		public void unsubscribeFrom(long userId) {
+			SubscribeCommand command = new SubscribeCommand(userId, true, session);
+			new ApiCommandExecutor().executeOnExecutor(ApiCommandExecutor.THREAD_POOL_EXECUTOR, command);
+			
+		}
+
+		@Override
+		public void reloadSearchOptions() {
+			LoadSearchOptionsCommand command = new LoadSearchOptionsCommand( session);
+			new ApiCommandExecutor().executeOnExecutor(ApiCommandExecutor.THREAD_POOL_EXECUTOR, command);
+			
+		}
+
+		@Override
+		public void deleteChatMessage(long msgId) {
+			RemoveChatMessage command = new RemoveChatMessage(session.getAuthTooken(), msgId);
+			new ApiCommandExecutor().executeOnExecutor(ApiCommandExecutor.THREAD_POOL_EXECUTOR, command);
+			
+		}
+
+		@Override
+		public void sendRegId(String regId) {
+			PostRegIdCommand command = new PostRegIdCommand(session.getAuthTooken(), regId);
+			new ApiCommandExecutor().executeOnExecutor(ApiCommandExecutor.THREAD_POOL_EXECUTOR, command);		
+		}
+
+		
+		int interviewLastRequestedPage = -1;
+		long interviewLastNextPageReqTime = 0;
+		@Override
+		public void loadInterviewAlbums(String query) {
+			LoadedAlbumsKeeper interviews = session.getInterviews();
+			if(interviewLastRequestedPage < interviews.getLastAlbumsPage() || (System.currentTimeMillis() - interviewLastNextPageReqTime) > 3000){
+				interviewLastRequestedPage = interviews.getLastAlbumsPage() +1;
+				AsyncTask<AuraDataSession, Void, Void> task = new InverviewLoaderTask(session.getAuthTooken(), query, interviewLastRequestedPage ).execute( session);
+				interviewLastNextPageReqTime = System.currentTimeMillis();				 
+			}			
+		}
+
+		@Override
+		public void executeSimplePut(long requestId, String url, String content) {
+			Log.d(TAG, "executeSimplePut");
+			SimplePutCommand command = new SimplePutCommand(session, requestId, url, content);
+			new ApiCommandExecutor().executeOnExecutor(ApiCommandExecutor.THREAD_POOL_EXECUTOR, command);			
+		}
+
+		@Override
+		public void executeSimplePost(long requestId, String url, String content) {
+			Log.d(TAG, "executeSimplePost");
+			SimplePostCommand command = new SimplePostCommand(session, requestId, url, content);
+			new ApiCommandExecutor().executeOnExecutor(ApiCommandExecutor.THREAD_POOL_EXECUTOR, command);			
+		}
+		
+	}
+	
+	@SuppressLint("NewApi") 
+	long getRamTotal(){
+		ActivityManager actManager = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
+		MemoryInfo memInfo = new ActivityManager.MemoryInfo();
+		actManager.getMemoryInfo(memInfo);
+		return memInfo.totalMem;
+	}
+}

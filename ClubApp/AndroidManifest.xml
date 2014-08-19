@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.aod.clubapp"
+    android:versionCode="19"
+    android:versionName="1.0" >
+
+    <uses-sdk
+        android:minSdkVersion="15"
+        android:targetSdkVersion="15" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.GET_ACCOUNTS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="com.google.android.c2dm.permission.RECEIVE" />
+    <uses-permission android:name="android.permission.READ_PROFILE" />
+	<uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.VIBRATE" />    
+	
+	
+    <permission android:name="com.aod.clubapp.gcm.permission.C2D_MESSAGE"
+        android:protectionLevel="signature" />
+    
+    <uses-permission android:name="com.aod.clubapp.gcm.permission.C2D_MESSAGE" />    
+    
+    
+    <application
+        android:allowBackup="true"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:name="ClubApplication" android:theme="@style/AppTheme">
+        
+        <meta-data android:name="com.google.android.gms.version"
+           android:value="@integer/google_play_services_version" />
+        
+		<receiver
+            android:name=".GcmBroadcastReceiver"
+            android:permission="com.google.android.c2dm.permission.SEND" >
+            <intent-filter>
+                <action android:name="com.google.android.c2dm.intent.RECEIVE" />
+                <category android:name="com.aod.clubapp.gcm" />
+            </intent-filter>
+        </receiver>
+        <service android:name=".GcmIntentService" />
+        
+        <activity
+            android:name="com.aod.clubapp.LoginActivity"
+            android:label="@string/app_name" 
+            android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize" 
+            android:theme="@android:style/Theme.Holo.Light.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <service android:name=".communicaton.AuraDataService" />
+        <meta-data android:name="com.facebook.sdk.ApplicationId" android:value="@string/app_id"/>
+        <activity android:label="@string/app_name" android:name="com.facebook.LoginActivity" android:noHistory="true" android:launchMode="singleInstance" android:windowSoftInputMode="adjustResize"></activity>
+        
+		<activity android:name="AnnouncementListActivity" android:screenOrientation="portrait"  android:icon="@drawable/a_icon" android:logo="@drawable/a_icon"></activity>        
+        
+        <activity android:name="MainActivity" android:screenOrientation="portrait"  android:icon="@drawable/a_icon" android:logo="@drawable/a_icon"></activity>
+        <activity android:name="AlbumContentActivity" android:screenOrientation="portrait"  android:icon="@drawable/a_icon" android:logo="@drawable/a_icon"></activity>
+        <activity android:name="PhotoDisplayActivity" android:screenOrientation="portrait"  android:theme="@style/AppTheme" android:icon="@drawable/a_icon" android:logo="@drawable/a_icon"></activity>
+        <activity android:name="CommentsListActivity" android:screenOrientation="portrait"  android:theme="@style/AppTheme" android:icon="@drawable/a_icon" android:logo="@drawable/a_icon" android:windowSoftInputMode="stateAlwaysHidden|adjustPan"></activity>
+        <activity android:name="InterviewDisplayActivity" android:screenOrientation="portrait"  android:theme="@style/AppTheme" android:icon="@drawable/a_icon" android:logo="@drawable/a_icon"></activity>
+        <activity android:name="ProfileActivity" android:screenOrientation="portrait"  android:theme="@style/AppTheme" android:icon="@drawable/a_icon" android:logo="@drawable/a_icon"></activity>
+        <activity android:name="ViewUserProfileActivity" android:screenOrientation="portrait"  android:theme="@style/AppTheme" android:icon="@drawable/a_icon" android:logo="@drawable/a_icon"></activity>
+		<activity android:name="PlaceCategorisListActivity" android:screenOrientation="portrait"  android:icon="@drawable/a_icon" android:logo="@drawable/a_icon"></activity>
+		<activity android:name="PlacesListActivity" android:screenOrientation="portrait"  android:icon="@drawable/a_icon" android:logo="@drawable/a_icon"></activity>
+		<activity android:name="PlaceViewActivity" android:screenOrientation="portrait"  android:icon="@drawable/a_icon" android:logo="@drawable/a_icon"></activity>				
+		<activity android:name="FriendsPhotoViewActivity" android:screenOrientation="portrait"  android:icon="@drawable/a_icon" android:logo="@drawable/a_icon"></activity>
+		<activity android:name="UserMarksViewActivity" android:screenOrientation="portrait"  android:icon="@drawable/a_icon" android:logo="@drawable/a_icon"></activity>
+		<activity android:name="SelectFriendActivity" android:screenOrientation="portrait"  android:theme="@style/AppTheme_Transparent" android:icon="@drawable/a_icon" android:logo="@drawable/a_icon"></activity>
+		<activity android:name="ViewHtmlTextActivity" android:screenOrientation="portrait"  android:theme="@style/AppTheme_NormalActionBar" android:icon="@drawable/a_icon" android:logo="@drawable/a_icon"></activity>
+		<activity android:name="NewsActivity" android:screenOrientation="portrait"  android:theme="@style/AppTheme" android:icon="@drawable/a_icon" android:logo="@drawable/a_icon"></activity>		
+		<activity android:name="DialogsActivity" android:screenOrientation="portrait"  android:theme="@style/AppTheme" android:icon="@drawable/a_icon" android:logo="@drawable/a_icon"></activity>
+		<activity android:name="DialogViewActivity" android:screenOrientation="portrait"  android:theme="@style/AppTheme" android:icon="@drawable/a_icon" android:logo="@drawable/a_icon" android:windowSoftInputMode="stateAlwaysHidden|adjustPan"></activity>
+		<activity android:name="EditSettingsActivity" android:screenOrientation="portrait"  android:theme="@style/AppThemePink" android:icon="@drawable/a_icon" android:logo="@drawable/a_icon" android:windowSoftInputMode="stateAlwaysHidden|adjustResize"></activity>
+		<activity android:name="EditProfileActivity" android:screenOrientation="portrait"  android:theme="@style/AppTheme_NormalActionBar" android:icon="@drawable/a_icon" android:logo="@drawable/a_icon" android:windowSoftInputMode="stateAlwaysHidden|adjustResize"></activity>						
+		<activity android:name="SubscriptionManagmentActivity" android:screenOrientation="portrait"  android:theme="@style/AppTheme_NormalActionBar" android:icon="@drawable/a_icon" android:logo="@drawable/a_icon" ></activity>
+		<activity android:name="SelectSeachCategoriesActivity" android:screenOrientation="portrait"  android:theme="@style/AppTheme_Transparent" android:icon="@drawable/a_icon" android:logo="@drawable/a_icon"></activity>		
+		<activity android:name="SelectPhotoActivity" android:screenOrientation="portrait"  android:icon="@drawable/a_icon" android:logo="@drawable/a_icon"></activity>
+		<activity android:name="PlaceDescViewActivity" android:screenOrientation="portrait"   android:theme="@style/AppTheme" android:icon="@drawable/a_icon" android:logo="@drawable/a_icon"></activity>
+    </application>
+
+</manifest>

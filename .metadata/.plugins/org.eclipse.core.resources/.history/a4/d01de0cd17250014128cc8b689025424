@@ -1,0 +1,394 @@
+package com.aod.clubapp;
+
+
+import java.util.ArrayList;
+import java.util.List;
+
+import android.app.ActionBar;
+import android.graphics.drawable.AnimationDrawable;
+import android.util.Log;
+import android.util.TypedValue;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.ViewGroup.LayoutParams;
+import android.widget.AbsListView;
+import android.widget.AdapterView;
+import android.widget.ImageView;
+import android.widget.AdapterView.OnItemClickListener;
+import android.widget.LinearLayout;
+import android.widget.ListView;
+import android.widget.AbsListView.OnScrollListener;
+
+import com.aod.clubapp.MainActivity.ViewMode;
+import com.aod.clubapp.communicaton.datamodel.Album;
+import com.aod.clubapp.communicaton.datamodel.AuraDataSession;
+import com.aod.clubapp.communicaton.datamodel.Banner;
+import com.aod.clubapp.communicaton.datamodel.LoadedAlbumsKeeper;
+import com.aod.clubapp.communicaton.datamodel.Place;
+
+public class AnnouncementScreen  extends BaseScreen {
+	private static final String TAG = "AnnouncementScreen"; 
+	private MainActivity parent;
+
+	private ListView lv;
+	private AuraDataSession session;
+	boolean interviewMode;
+	private MainActivity.ViewMode viewMode;
+	Place place;//contains non null value in ViewMode.FOR_PLACE only
+	ArrayList<Album> displayedAlbums;
+	ArrayList<Banner> displayedBanners;
+	
+	private int actionBarHeight = 0;
+	private boolean updTitleOnScroll = false;
+	
+	AnnouncementScreen (View view, MainActivity parent, MainActivity.ViewMode mode) {
+		super(view);
+		displayedBanners = new ArrayList<Banner>();
+		this.parent = parent;
+		this.interviewMode = mode == ViewMode.INTERVIEW;
+		this.viewMode = mode;
+		
+		lv = (ListView)view.findViewById(android.R.id.list);
+		lv.setOnItemClickListener(new OnItemClickListener() {
+
+			@Override
+			public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+				ArrayList<Album> listAlb = displayedAlbums;
+				Log.d(TAG, "clicked item in albums list: " + listAlb.get(position).getName());
+				if(viewMode == viewMode.FRIENDS_PHOTO) {
+					FriendsPhotoViewActivity.showFriendPhotos(
+							displayedAlbums.get(position).getId(), 
+							AnnouncementScreen.this.parent);
+				} else {
+					AnnouncementScreen.this.parent.showAlbumContent(listAlb.get(position).getId());
+				}
+			}
+		});
+		// calculate action bar height
+		TypedValue tv = new TypedValue();
+		if (parent.getTheme().resolveAttribute(android.R.attr.actionBarSize, tv, true)){
+		    actionBarHeight = TypedValue.complexToDimensionPixelSize(tv.data,parent.getResources().getDisplayMetrics());
+		}
+		
+		if(viewMode == MainActivity.ViewMode.FOR_PLACE){
+			View emptView = parent.getLayoutInflater().inflate(R.layout.empty_ann_for_place, null);
+			parent.addContentView(emptView, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+			lv.setEmptyView(emptView);
+			lv.setAdapter(null);
+		} else {
+			View emptView = parent.getLayoutInflater().inflate(R.layout.clubs_animated_progress, null);
+			parent.addContentView(emptView, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+			lv.setEmptyView(emptView);
+			lv.setAdapter(null);
+			
+			ImageView iv = (ImageView)emptView.findViewById(R.id.loading_data);
+			AnimationDrawable frameAnimation = (AnimationDrawable) iv.getDrawable();
+			frameAnimation.start();			
+		}		
+	}
+	
+	@Override
+	public void onClick(View v) {
+		// TODO Auto-generated method stub		
+	}
+
+	public boolean isEmpty(){
+		if(lv.getAdapter() == null)
+			return true;
+		return lv.getAdapter().getCount() == 0;
+	}
+	
+	private  int lastItem; 
+	private AbsListView.OnScrollListener onScroll = new AbsListView.OnScrollListener() {
+		
+		int mScrollState = AbsListView.OnScrollListener.SCROLL_STATE_IDLE;
+		int callsCnt = 0;
+		@Override
+		public void onScrollStateChanged(AbsListView view, int scrollState) {
+			mScrollState = scrollState;
+		}
+		
+		@Override
+		public void onScroll(AbsListView view, int firstVisibleItem, int visibleItemCount, int totalItemCount) {
+			ActionBar abar = parent.getActionBar();
+			if(abar == null)
+				return;
+			if(visibleItemCount == 0)
+				return;
+			if (mScrollState == OnScrollListener.SCROLL_STATE_IDLE && (firstVisibleItem + visibleItemCount) >= totalItemCount ){
+				if(viewMode == ViewMode.MAIN){
+					parent.getDataService().loadAlbumsNextPage(parent.getSearchQuery());
+				} else if(viewMode == ViewMode.INTERVIEW){
+					parent.getDataService().loadInterviewAlbums(parent.getSearchQuery());
+				}
+			}
+			
+	        //if (mScrollState == OnScrollListener.SCROLL_STATE_IDLE && callsCnt > 5){
+//			if (mScrollState == OnScrollListener.SCROLL_STATE_IDLE){
+//	        	Log.d(TAG, "onScroll skip idle " + callsCnt);
+//	            return;
+//	        }
+	        if(updTitleOnScroll){
+				if(lastItem <= firstVisibleItem+1){
+					String title = parent.getString(R.string.title_events);
+					if(abar.getTitle().toString().compareTo(title.toString()) != 0) {
+						abar.setTitle(title);
+					}
+				} else {
+					String title = parent.getString(R.string.title_announcement);
+					if(abar.getTitle().toString().compareTo(title.toString()) != 0) {
+						abar.setTitle(title);
+					}
+				}
+	        }
+			moveTitleOnScroll(view, firstVisibleItem, visibleItemCount, totalItemCount);
+//			callsCnt++;
+		}
+	};
+	
+	
+	public void reloadData() {
+		Log.d(TAG, "Reloading data in listview");
+		
+		if(viewMode == MainActivity.ViewMode.FRIENDS_PHOTO) {
+			parent.getActionBar().setTitle(R.string.menu_friends_labels);
+		}
+		
+		if(session == null)
+			return;
+		if((viewMode == MainActivity.ViewMode.MAIN && session.haveAlbums()) 
+				|| (viewMode == MainActivity.ViewMode.INTERVIEW && session.haveAlbums())
+				|| (viewMode == MainActivity.ViewMode.FOR_PLACE && session.haveAlbumForLastPlace()) 
+				|| (viewMode == MainActivity.ViewMode.FRIENDS_PHOTO && session.haveAlbumForFollowed()) ) {
+			Log.d(TAG, "reloadData filling album");
+			Album[] albums;
+			List<Album> albumsList = getAlbumsMainMode(); 
+			if(viewMode == MainActivity.ViewMode.INTERVIEW){
+				albumsList = getAlbumsInterviewMode();
+			} else if(viewMode == MainActivity.ViewMode.FOR_PLACE) {
+				albumsList = getAlbumsPlaceMode();
+			} else if(viewMode == MainActivity.ViewMode.FRIENDS_PHOTO) {
+				albumsList = getAlbumsFriendsMode();
+			}
+			if(viewMode == MainActivity.ViewMode.INTERVIEW){
+				parent.getActionBar().setTitle(parent.getString(R.string.menu_interview));
+			}
+			if(albumsList == null || albumsList.size() == 0){
+				lv.setAdapter(null);
+				return;
+			} else {
+				displayedBanners = new ArrayList<Banner>();
+				for(int i = 0; i< albumsList.size(); i++){
+					Album alb = albumsList.get(i);
+					if(alb.isBanner()){
+						//displayedBanners.add(alb);
+						albumsList.remove(i);
+					}
+				}
+				displayedAlbums = new ArrayList<Album>(albumsList);
+			}
+			
+			if(lv.getAdapter() != null && lv.getAdapter().getCount() >= displayedAlbums.size()){
+				return;
+			}
+			int backUpedPos = -1;
+			if(lv.getAdapter() != null){
+				backUpedPos = lv.getFirstVisiblePosition();
+			}
+			albums = albumsList.toArray(new Album[displayedAlbums.size()]);
+			AlbumListAdapter adapter;
+			boolean updatePos = false;
+			if(lv.getAdapter() == null){
+				adapter = new AlbumListAdapter(parent, albums, viewMode == viewMode.FRIENDS_PHOTO);
+				lv.setAdapter(adapter);
+				updatePos = true;
+			}else {
+				adapter = (AlbumListAdapter)lv.getAdapter();
+				adapter.setNewValues(albums);				
+				adapter.notifyDataSetChanged();
+				updatePos = true;
+				lastItem = backUpedPos + 1;
+				lv.smoothScrollToPosition(lastItem);
+//				adapter = new AlbumListAdapter(parent, albums, viewMode == viewMode.FRIENDS_PHOTO);
+//				lv.setAdapter(adapter);				
+//				updatePos = true;
+			}
+
+			lastItem = getFirstEventItem();
+			
+			lv.setOnScrollListener(onScroll);			
+			if(viewMode == MainActivity.ViewMode.MAIN){
+				if(backUpedPos >= 0){
+					lastItem = backUpedPos + 1;
+				}
+				if(updatePos){
+					if(lastItem != 0){
+						Log.d(TAG, "TP6 actionBarHeight=" + actionBarHeight);
+						lv.setSelectionFromTop(lastItem, actionBarHeight);
+						parent.getActionBar().setTitle(parent.getString(R.string.title_events));
+					} else {
+						Log.d(TAG, "TP7");
+						lv.smoothScrollToPosition(0);
+					}
+				}
+				updTitleOnScroll = true;
+			} else {
+				ActionBar abar = parent.getActionBar();
+				updTitleOnScroll = false;
+				//lv.smoothScrollToPosition(0);
+				lv.setSelectionFromTop(0, actionBarHeight);
+				if(abar != null && viewMode == MainActivity.ViewMode.MAIN) {
+					String title = parent.getString(R.string.title_events);
+					if(abar.getTitle().toString().compareTo(title.toString()) != 0) {
+						abar.setTitle(title);
+						lv.smoothScrollToPosition(0);
+					}
+				}
+				if(abar != null && viewMode == MainActivity.ViewMode.INTERVIEW) {
+						lv.smoothScrollToPosition(3);
+				}
+			}
+		} else {
+			Log.d(TAG, "Reloading data in listview: empty");
+			lv.setAdapter(null);
+			parent.checkDataAndScheduleUpdate(MainActivity.WAIT_BEFORE_UPDATE);
+		}		
+		lv.smoothScrollToPosition(2);
+	}
+	
+	private List<Album> getAlbumsMainMode(){
+		return session.getAlbums();		
+	}
+	
+	//todo interview
+	private ArrayList<Album> getAlbumsInterviewMode(){
+		LoadedAlbumsKeeper interviews = session.getInterviews();
+		if(interviews.isEmpty()){
+			return new ArrayList<Album>();
+		}
+		return new ArrayList<Album>(interviews.getAlbums());
+	}
+	
+	private ArrayList<Album> getAlbumsPlaceMode(){
+		ArrayList<Album> listAlbFiltered;
+		listAlbFiltered = session.getAlbumsForLastPlace();
+		if(listAlbFiltered == null)
+			listAlbFiltered = new ArrayList<Album>();//empty data
+		return listAlbFiltered;
+	}
+	
+	private ArrayList<Album> getAlbumsFriendsMode(){
+		ArrayList<Album> listAlbFiltered;
+		listAlbFiltered = session.getAlbumsForFollowed();
+		if(listAlbFiltered == null)
+			listAlbFiltered = new ArrayList<Album>();//empty data
+		return listAlbFiltered;
+	}
+	
+	public void SetDataSession(AuraDataSession session) {
+		this.session = session;
+		if(displayedAlbums == null || displayedAlbums.size() == 0){
+			reloadData();
+		}
+	}
+	
+	private int getFirstEventItem(){
+		int result = 0;
+		if(displayedAlbums == null)
+			return result;
+		long currnentTime = System.currentTimeMillis();
+/*		for(int i=0; i<displayedAlbums.size();i++){
+			Album alb = displayedAlbums.get(i);
+			if(alb.isBanner()){
+				displayedBanners.add(alb.getBanner());
+				displayedAlbums.remove(i);
+			}
+		}*/
+		for(int i=0; i < displayedAlbums.size(); i++){
+			Album alb = displayedAlbums.get(i);
+			if(alb.isBanner()) continue;
+			if(alb.getDate().getTime() < currnentTime){
+				return i;
+			}
+		}
+		
+		return result;		
+	}
+	
+	private int getLastFeatureItem(){
+		int result = -1;
+		if(displayedAlbums == null)
+			return result;
+		long currnentTime = System.currentTimeMillis();
+		for(int i=0; i < displayedAlbums.size(); i++){
+			Album alb = displayedAlbums.get(i);
+			if(alb.getDate().getTime() > currnentTime){
+				result = i;
+			}
+			//result = i;
+		}
+		return result;
+	}
+	
+	public void moveTitleOnScroll(AbsListView view, int firstVisibleItem, int visibleCount, int totalItemCount) {
+		//Log.d(TAG, "moveTitleOnScroll visible count " + visibleCount + " total " + totalItemCount);
+        for (int i=0; i < visibleCount; i++) {
+            View listItem = lv.getChildAt(i);
+            if (listItem == null){
+            	Log.d(TAG, "moveTitleOnScroll break ");
+                break;
+            }
+            LinearLayout title = (LinearLayout)listItem.findViewById(R.id.black_overlay);
+ 
+            int topMargin = 0;
+            if (i == 0) {
+                int top = listItem.getTop();
+                int height = listItem.getHeight();
+ 
+                // if top is negative, the list item has scrolled up.
+                // if the title view falls within the container's visible portion,
+                //     set the top margin to be the (inverse) scrolled amount of the container.
+                // else
+                //     set the top margin to be the difference between the heights.
+                if (top < 0){
+                	// topMargin = title.getHeight() < (top + height) ? -top : (height - title.getHeight());
+                    topMargin = title.getHeight() < (top + height - actionBarHeight) ? (-top + actionBarHeight) : (height - title.getHeight());
+                } else {
+                	if(actionBarHeight < top){
+	                	topMargin = 0;
+	                } else {
+	                	topMargin = actionBarHeight - top;
+	                }
+                }
+            }
+            if(i == 1){
+            	int top = listItem.getTop();
+                int height = listItem.getHeight();
+                if (top > 0){
+	                if(actionBarHeight < top){
+	                	topMargin = 0;
+	                } else {
+	                	topMargin = actionBarHeight - top;
+	                }
+                }
+            }
+            if(listItem.getBottom() < 0){
+            	topMargin = 0;
+            }
+            // set the margin.
+            ((ViewGroup.MarginLayoutParams) title.getLayoutParams()).topMargin = topMargin;
+ 
+            // request Android to layout again.
+            listItem.requestLayout();
+            listItem.invalidate();
+        }
+	}
+	
+	public void clearList(){
+		Log.d(TAG, "clearList");
+		lv.smoothScrollToPosition(0);
+		lv.setAdapter(null);
+		displayedAlbums = null;
+	}
+	
+}

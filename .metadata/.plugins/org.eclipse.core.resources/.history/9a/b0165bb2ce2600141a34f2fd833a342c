@@ -1,0 +1,507 @@
+package com.aod.clubapp.communicaton.datamodel;
+
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.content.SharedPreferences.Editor;
+import android.text.TextUtils;
+import android.util.Log;
+import android.util.LruCache;
+import android.util.Pair;
+
+import com.aod.clubapp.communicaton.auraapi.SignIn;
+import com.aod.clubapp.communicaton.datamodel.Photo.PhotoUserTag;
+import com.aod.clubapp.utils.Preferences;
+
+public class AuraDataSession {
+	public static final String TAG = "AuraDataSession";  
+	public static final String BASE_URL     = "http://fixapp-clubs.herokuapp.com/api/v2/";
+	//public static final String BASE_URL     = "http://fixapp-clubs.herokuapp.com/api/v1/";
+	public static final String BASE_URL_OLD = "http://fixapp-clubs.herokuapp.com/api/v1/";
+	public static final String BASE_URL_MOSK = "http://clubsv2.apiary-mock.com/api/v2/";
+	
+	public static final String OPERATION_STATUS = "operation_status";
+	public static final String MESSAGE = "informational_message";
+	public static final int STATUS_OK = 1;
+	public static final int STATUS_FAIL = 0;
+	
+	public static final String SIMPLE_GET_ID = "simple_get_it";
+	public static final String SIMPLE_GET_RESPONSE = "simple_get_response";
+	
+	public static final String PHOTO_ID = "comments_photo_id";
+	public static final String PLACE_CATEGORY_ID = "places_category_id";
+	public static final String PLACE_ID = "places_id";
+	public static final String ALBUMS_LIST_TYPE = "albums_list_type";
+	
+	public static final int ALBUMS_LIST_TYPE_DEFAULT = 0;
+	public static final int ALBUMS_LIST_TYPE_PLACES = 1;
+	public static final int ALBUMS_LIST_TYPE_FOLLOWED_USERS = 2;
+	public static final int ALBUMS_LIST_TYPE_INTERVIEW = 3;
+	
+	
+	private static final int KEEPER_ANN = 1;
+	private static final int KEEPER_PLACES = 2;
+	private static final int KEEPER_FRIENDS = 3;
+	private static final int KEEPER_INTERVIEW = 4;
+	
+	/**
+	 * Broadcast intent on successful Login
+	 */
+	public static final String ACTION_LOGIN_RESULT = "com.aod.clubapp.datasession.ACTION_LOGIN_RESULT";
+	
+	public static final String ACTION_HTTP_GET_RESULT = "com.aod.clubapp.datasession.ACTION_HTTP_GET_RESULT";
+	
+	/**
+	 * Fire when albums loaded 
+	 */
+	public static final String ACTION_LOAD_ALBUMS_RESULT = "com.aod.clubapp.datasession.ACTION_LOAD_ALBUMS_RESULT";
+	public static final String ACTION_LOAD_COMMENTS_RESULT = "com.aod.clubapp.datasession.ACTION_LOAD_COMMENTS_RESULT";
+	public static final String ACTION_LOAD_PLACES_RESULT = "com.aod.clubapp.datasession.ACTION_LOAD_PLACES_RESULT";
+	public static final String ACTION_CLOSE_ALL_SCREENS = "com.aod.clubapp.datasession.ACTION_CLOSE_ALL_SCREENS";
+	private Context context;
+	
+	private String userName;
+	private String password;
+	private LoginType loginType; 
+	
+	//returned by login request
+	private String authTooken;
+	private long id;	
+	private boolean admin;
+	
+	LoadedAlbumsKeeper announcmentAlbums;
+	LoadedAlbumsKeeper interviewAlbums;
+	
+	private ArrayList<Album> albumsForLastPlace;
+	private ArrayList<Album> albumsForFollowed;
+	
+	private List<User> followedUsers;
+	private List<UserActivity> news;
+	
+	private List<Dialog> dialogs;
+	
+	private HashMap<Long, List<Place>> places;
+	private Profile myProfile;
+	
+	//here I keep last loaded comments and corresponding photo id
+	private long photoIdForComments; 
+	private List<Comment> comments;
+	private PlaceCategories categories;
+	private SearchOptions searchOptions;
+	
+	private LruCache responsesCache = new LruCache(1024 * 1024) {
+	       protected int sizeOf(Long key, String value) {
+	           return value.length()*2;
+	       
+	   }};
+	
+	public enum LoginType{
+		NONE,
+		AURA_LOGIN,
+		FACEBOOK_LOGIN,
+		INSTAGRAM_LOGIN
+	};
+	
+	public AuraDataSession(Context context) {
+		loginType = LoginType.NONE;
+		admin = false;
+		this.context = context;
+		announcmentAlbums = new LoadedAlbumsKeeper(KEEPER_ANN);
+		interviewAlbums  = new LoadedAlbumsKeeper(KEEPER_INTERVIEW);
+		
+		restoreSessionData();
+	}
+
+	public Context getContext() {
+		return context;
+	}
+
+	public String getUserName() {
+		return userName;
+	}
+
+	public void setUserName(String userName) {
+		this.userName = userName;
+	}
+
+	public String getPassword() {
+		return password;
+	}
+
+	public void setPassword(String password) {
+		this.password = password;
+	}
+
+	public LoginType getLoginType() {
+		return loginType;
+	}
+
+	public void setLoginType(LoginType loginType) {
+		this.loginType = loginType;
+	}
+
+	public synchronized String getAuthTooken() {
+		return authTooken;
+	}
+
+	public synchronized void setAuthTooken(String authTooken) {
+		this.authTooken = authTooken;
+	}
+
+	public long getCurrentUserId() {
+		return id;
+	}
+
+	public boolean isAdmin() {
+		return admin;
+	}
+
+	public boolean isLoggedIn() {
+		return !(TextUtils.isEmpty(authTooken) || TextUtils.isEmpty(userName)) ;
+	}
+	
+	public synchronized void setAuraCredentials(String userName, String pwd, String authTooken, long id, boolean isAdmin) {
+		this.loginType = LoginType.AURA_LOGIN;
+		this.userName = userName;
+		this.authTooken = authTooken;
+		this.password = pwd;
+		this.id = id;
+		this.admin = isAdmin;
+		
+	}
+	
+	public synchronized void resetCredentials() {
+		this.loginType = LoginType.NONE;
+		this.userName = null;
+		this.authTooken = null;
+		this.id = 0;
+		this.admin = false;
+	}	
+	
+	public void storeSessionData(Context ctx) {
+		Log.d(TAG, "storeSessionData");
+		Preferences.storeCredentials(context, id, userName, password, authTooken);
+	}
+
+	public void restoreSessionData() {
+		Log.d(TAG, "restoreSessionData");
+		places = new HashMap<Long, List<Place>>();		
+		//TODO: restore admin field too
+		Preferences.UserInfo userInfo =  Preferences.getUserInfo(context);
+		id = userInfo.getUserId();
+		userName = userInfo.getName();
+		password = userInfo.getPassword();
+		authTooken = userInfo.getSessionTooken();
+		Log.d(TAG, "restoreSessionData : id=" + id 
+				+ " username=" + userName 
+				+ " password=" + "XXXXXXX"
+				+ " tooken=" + authTooken);
+	}
+	
+	public synchronized List<Album> getAlbums() {
+		if(announcmentAlbums == null){
+			return new ArrayList<Album>();//empty data
+		}
+		return announcmentAlbums.getAlbums();
+	}
+
+	public boolean haveAlbums() {
+		return announcmentAlbums != null && !announcmentAlbums.isEmpty();
+	}
+	
+	public synchronized void setAlbums(List<Album> albums){
+		if(announcmentAlbums == null){
+			announcmentAlbums = new LoadedAlbumsKeeper(KEEPER_ANN);
+		}
+		announcmentAlbums.setAlbums(albums);
+
+	}
+	
+	public synchronized void addAlbumsNextPage(List<Album> albums, int page){
+		announcmentAlbums.addAlbumsNextPage(albums, page);
+	}
+	
+	public int getLastLoadedAlbumsPageIndx(){
+		if(announcmentAlbums == null)
+			return -1;
+		return announcmentAlbums.getLastAlbumsPage();
+	}
+	
+	public synchronized Album getAlbumById(long id){
+		if(announcmentAlbums == null || announcmentAlbums.getAlbums() == null)
+			return null;
+		
+		for(Album alb : announcmentAlbums.getAlbums()) {
+			if(alb.getId() == id) {
+				return alb;
+			}
+		}
+		//try find this id in loaded albums
+		if(interviewAlbums.getAlbums() != null){
+			for(Album alb : interviewAlbums.getAlbums()) {
+				if(alb.getId() == id) {
+					return alb;
+				}
+			}
+		}
+		return null;
+	}
+	
+	public SignIn createReLoginCmd() {
+		SignIn relogin = new SignIn(userName, password, this);
+		return relogin;
+	}	
+	
+	/**
+	 * @return true if restored auth_tooken successfully
+	 */
+	public boolean reloginAfterAuthError() {
+		SignIn cmd = createReLoginCmd();
+		cmd.run();
+		return !cmd.isFailed();
+	}
+	
+	public void setLastLoadedComments(long photoId, Comments comments) {
+		if(comments != null && comments.getComments() != null && comments.getComments().length > 0) {
+			photoIdForComments = photoId;
+			this.comments = Arrays.asList(comments.getComments());
+		}		
+	}
+	
+	public Pair<Long, List<Comment>> getLastComments() {
+		return Pair.create(photoIdForComments, comments);
+	}
+
+	public Profile getMyProfile() {
+		return myProfile;
+	}
+
+	public void setMyProfile(Profile myProfile) {
+		this.myProfile = myProfile;
+	}
+
+	public PlaceCategories getCategories() {
+		return categories;
+	}
+
+	public String getCategoryName(long categoryId) {
+		if(categories == null)
+			return null;
+		return categories.getNameForId(categoryId);
+	}
+	
+	public void setCategories(PlaceCategories categories) {
+		this.categories = categories;
+	}
+
+	public List<Place> getPlacesList(long categoryId) {
+		return places.get(categoryId);
+	}
+	
+	public Place getPlace(long categoryId, long placeId) {
+		Place reslt = null;
+		List<Place> list = places.get(categoryId);
+		if(list == null)
+			return null;
+		for(Place pls : list) {
+			if(pls.getId() == placeId){
+				return pls;
+			}
+		}
+		return null;
+	}
+	
+	public void setPlaces(long categoryId, PlacesList places) {		
+		this.places.put(categoryId,  Arrays.asList(places.getPlaces()));
+	}
+
+	public ArrayList<Album> getAlbumsForLastPlace() {
+		return albumsForLastPlace;
+	}
+
+	public boolean haveAlbumForLastPlace() {
+		return albumsForLastPlace != null && albumsForLastPlace.size() > 0;
+	}
+	
+	public void setAlbumsForLastPlace(ArrayList<Album> albumsForLastPlace) {
+		this.albumsForLastPlace = albumsForLastPlace;
+	}
+
+	public ArrayList<Album> getAlbumsForFollowed() {
+		return albumsForFollowed;
+	}
+
+	public void setAlbumsForFollowed(ArrayList<Album> albumsForFollowed) {
+		this.albumsForFollowed = albumsForFollowed;
+	}
+	public boolean haveAlbumForFollowed() {
+		return albumsForFollowed != null && albumsForFollowed.size() > 0;
+	}
+	
+	public Album getAlbumsFriendsForId(long id){
+		if(albumsForFollowed == null)
+			return null;
+		for(Album alb : albumsForFollowed) {
+			if(alb.getId() == id){
+				return alb;
+			}
+		}
+		return null;
+	}
+
+	public List<User> getFollowedUsers() {
+		return followedUsers;
+	}
+
+	public String friendLoginFromId(long id) {
+		for(User user : followedUsers){
+			if(user.getId() == id){
+				return user.getLogin();
+			}
+		}
+		return "";
+	}
+	
+	public boolean isFriend(long userId) {
+		if(followedUsers == null)
+			return false;
+		for(User user : followedUsers){
+			if(user.getId() == userId){
+				return true;
+			}
+		}
+		return false;
+	}
+	
+	public void setFollowedUsers(List<User> followedUsers) {
+		this.followedUsers = followedUsers;
+	}
+	public int getFollowedUsersCount() {
+		if(followedUsers == null)
+			return 0;
+		return followedUsers.size();
+	}
+
+	public List<UserActivity> getNews() {
+		return news;
+	}
+
+	public void setNews(UserActivities activities) {
+		if(activities != null && activities.getActivities() != null && activities.getActivities().length > 0)
+			this.news = Arrays.asList(activities.getActivities());
+	}
+	
+	public List<Dialog> getDialogs() {
+		return dialogs;
+	}
+
+	public void setDialogs(Dialogs dialogs) {
+		if(dialogs == null || dialogs.getDialogs() == null){
+			return;
+		}
+		this.dialogs = Arrays.asList(dialogs.getDialogs());
+	}
+	
+	public void putResponse(long id, String response) {
+		responsesCache.put(id, response);
+	}
+	
+	public String getSimpleHttpResponse(long id) {
+		return  (String)responsesCache.get(id);
+	}
+	public void removeSimpleHttpResponse(long id) {
+		responsesCache.remove(id);
+	}
+
+	public void processPhotoChangesAddTag(long userId, long photoId, float x){
+		String friendLogin;
+		if(myProfile.getId() == userId) {
+			friendLogin = myProfile.getLogin();
+		} else {
+			friendLogin = friendLoginFromId(userId);
+		}
+		if(!TextUtils.isEmpty(friendLogin)){
+			PhotoUserTag tag = new PhotoUserTag(System.currentTimeMillis(), x, userId, friendLogin);			
+			addPhotoTagToAlbum(getAlbums(), photoId, tag);
+			addPhotoTagToAlbum(albumsForLastPlace, photoId, tag);
+			addPhotoTagToAlbum(albumsForLastPlace, photoId, tag);
+		}
+	}
+	
+	private void addPhotoTagToAlbum(List<Album> albumsList, long photoId, Photo.PhotoUserTag tag){
+		if(albumsList != null && albumsList.size() > 0) {
+			for(Album alb : albumsList) {
+				alb.addTagToPhoto(photoId, tag);
+			}
+		}
+	}
+	
+	public void logout() {
+		authTooken = "";
+		password = null;
+		myProfile = null;
+		storeSessionData(context);
+	}
+	
+	public void processPhotoChangesLike(long photoId, boolean liked){						
+		likePhotoInAlbum(getAlbums(), photoId, liked);
+		likePhotoInAlbum(albumsForLastPlace, photoId, liked);
+		likePhotoInAlbum(albumsForLastPlace, photoId, liked);
+
+	}
+	
+	private void likePhotoInAlbum(List<Album> albumsList, long photoId, boolean liked){
+		if(albumsList != null && albumsList.size() > 0) {
+			for(Album alb : albumsList) {
+				alb.changeLikeOnPhoto(photoId, liked);				
+			}
+		}
+	}
+
+	public SearchOptions getSearchOptions() {
+		return searchOptions;
+	}
+
+	public void setSearchOptions(SearchOptions searchOptions) {
+		this.searchOptions = searchOptions;
+	}
+
+	private static final String ALBUMS_FILE_NAME = "albums.json";
+	
+	private String getAlbumsCacheFilePath(){
+		 return context.getFilesDir().getPath() + ALBUMS_FILE_NAME;
+	}
+	
+	public static void clearState(Context cntx){
+		//announcmentAlbums.clearState(getAlbumsCacheFilePath(), context);
+		File fl = new File(cntx.getFilesDir().getPath() + ALBUMS_FILE_NAME);
+		if(fl.exists()){
+			fl.delete();
+		}
+		SharedPreferences prefs= Preferences.getAppPreferences(cntx);
+		Editor ed = prefs.edit();
+		ed.remove(LoadedAlbumsKeeper.PAGES_KEY + Integer.toString(KEEPER_ANN));
+		ed.commit();
+	}
+	
+	public void saveState(){
+		announcmentAlbums.saveState(getAlbumsCacheFilePath(), context);
+	}
+	
+	public void restoreState(){
+		announcmentAlbums.restoreState(getAlbumsCacheFilePath(), context);
+	}
+
+	public  LoadedAlbumsKeeper getEventsAlbums() {
+		return announcmentAlbums;
+	}
+	
+	public  LoadedAlbumsKeeper getInterviews() {
+		return interviewAlbums;
+	}
+}

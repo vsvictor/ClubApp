@@ -1,0 +1,236 @@
+package com.aod.clubapp;
+
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
+import android.content.Intent;
+import android.os.Bundle;
+import android.support.v4.view.ViewPager;
+import android.text.TextUtils;
+import android.util.Log;
+import android.view.View;
+import android.widget.TextView;
+
+import com.aod.clubapp.communicaton.auraapi.BaseGetApiCommand;
+import com.aod.clubapp.communicaton.datamodel.Album;
+import com.aod.clubapp.communicaton.datamodel.Albums;
+import com.aod.clubapp.communicaton.datamodel.AuraDataSession;
+import com.aod.clubapp.communicaton.datamodel.Photo;
+import com.aod.clubapp.communicaton.datamodel.Photos;
+import com.aod.clubapp.communicaton.datamodel.Place;
+import com.google.gson.Gson;
+import com.google.gson.JsonSyntaxException;
+import com.squareup.picasso.Picasso;
+import com.viewpagerindicator.CirclePageIndicator;
+
+public class PlaceViewActivity extends AuraBaseActivityFullscreen {
+	public static final String TAG = "PlaceViewActivity";
+	private ViewPager pager;
+	private ImagesPagerAdapter adapter;
+	private CirclePageIndicator indicator;
+	
+	private TextView likesCount;
+	private TextView photoCount;
+	private TextView placeDesc;
+	private long placeCatId;
+	private long placeId;
+	private Place place;
+	private boolean initializationDone = false;
+	long loadAnnReqId = -1;
+	private static final String checkPlaceAnnUrlBase = AuraDataSession.BASE_URL + "albums?auth_token=";
+	private int iRes = 0;
+	public static void showPlace(long placeCatId, long placeId,  Activity cntx) {
+		Log.d(TAG, "showPlace place id= " + Long.toString(placeId));
+		Intent intent = new Intent(cntx, PlaceViewActivity.class)
+			.putExtra(PARAM_CATEGORY_ID, placeCatId)
+			.putExtra(PARAM_PLACE_ID, placeId);
+    	cntx.startActivity(intent);
+	}
+
+	public static void showEventsForPlace(long placeCatId, long placeId,  Activity cntx) {
+		Log.d(TAG, "showEventsForPlace place id= " + Long.toString(placeId));
+		Intent intent = new Intent(cntx, MainActivity.class)
+			.putExtra(PARAM_CATEGORY_ID, placeCatId)
+			.putExtra(PARAM_PLACE_ID, placeId);
+    	cntx.startActivity(intent);		
+	}
+	
+	@Override
+	public void onDataServiceConnected() {
+		Log.d(TAG, "onDataServiceConnected");	
+		super.onDataServiceConnected();
+		
+		String urlQery = createUrlForPlace(placeId);
+
+		startActivity(new Intent(this, MainActivity.class)
+		.putExtra(AuraBaseActivity.PARAM_PLACE_ID, placeId)
+		.putExtra(AuraBaseActivity.PARAM_CATEGORY_ID, placeCatId));
+		
+		loadAnnReqId = System.currentTimeMillis();
+		getLocalService().executeSimpleGet(loadAnnReqId, urlQery);		
+		fillContent();
+	}
+
+	@Override
+	public void onDataServiceDisConnected() {
+		Log.d(TAG, "onDataServiceDisConnected");
+	}
+
+	@Override
+	protected void onCreate(Bundle savedInstanceState) {
+		super.onCreate(savedInstanceState);	
+		setContentView(R.layout.activity_place_view);
+		
+		placeCatId = getIntent().getLongExtra(PARAM_CATEGORY_ID, -1);
+		placeId = getIntent().getLongExtra(PARAM_PLACE_ID, -1);
+		
+		final View controlsView = findViewById(R.id.fullscreen_content_controls);
+		final View contentView = findViewById(R.id.fullscreen_content);
+		
+		likesCount = (TextView) findViewById(R.id.tv_likes_count);
+		photoCount = (TextView) findViewById(R.id.tv_photo_count);
+		placeDesc = (TextView) findViewById(R.id.tv_description);
+		pager = (ViewPager)findViewById(R.id.pager);
+		indicator = (CirclePageIndicator)findViewById(R.id.indicator);
+		
+		setupSystemUiHider(controlsView, contentView);
+		findViewById(R.id.tv_more_link).setOnClickListener(new  View.OnClickListener() {
+			
+			@Override
+			public void onClick(View arg0) {
+				if(place != null){
+					if(place.getPlacePhotos().length > 0){
+						PlaceDescViewActivity.showPlaceDesc(placeCatId, placeId, place.getPlacePhotos()[0].getImageMediumUrl() , PlaceViewActivity.this);
+					}else {
+						PlaceDescViewActivity.showPlaceDesc(placeCatId, placeId, "", PlaceViewActivity.this);
+					}
+				}
+			}
+		});
+		fillContent();
+	}
+	
+	public void onLikeClick(View view) {
+		Log.d(TAG, "onLikeClick");
+		long cnt = place.getLikesCount();
+		if(place.isLiked()) {
+			place.setLikesCount(cnt - 1);
+			place.setLiked(false);
+		} else {
+			place.setLikesCount(cnt + 1);
+			place.setLiked(true);
+		}
+		updateLikesCount();
+	}
+	
+	public void onShowAnnClick(View view) {
+		Log.d(TAG, "onShowAnnClick");
+		//if((iRes == 0) || (iRes == 1)){
+		if((iRes == 1)){
+		startActivity(new Intent(this, MainActivity.class)
+			.putExtra(AuraBaseActivity.PARAM_PLACE_ID, placeId)
+			.putExtra(AuraBaseActivity.PARAM_CATEGORY_ID, placeCatId));
+		}
+		if(iRes == -1){
+			View cnt = findViewById(R.id.empt_ann_cnt);
+			cnt.setVisibility(View.VISIBLE);
+		}
+	}
+	
+	private void updateLikesCount(){
+		long cnt = 0;
+		if(place != null) {
+			cnt = place.getPlacePhotos().length;
+		}
+		if(photoCount != null) {
+			photoCount.setText(getString(R.string.photo_count, cnt));
+		}
+		
+		if(likesCount != null) {
+			updateLikesCound(likesCount, place.getLikesCount(), place.isLiked());
+		}
+	}
+
+	private void fillContent() {
+		if(getDataSession() == null)
+			return;
+		if(initializationDone)
+			return;
+		
+		if(pager != null) {
+			Log.d(TAG, "fillContent() placeid=" + placeId);
+			place = getDataSession().getPlace(placeCatId, placeId);
+			if(place == null) {
+				return;
+			}
+			updateLikesCount();
+			placeDesc.setText(
+					getString(R.string.place_descripton, 
+						TextUtils.isEmpty(place.getDescription()) ? " " : place.getDescription(),
+						TextUtils.isEmpty(place.getMetro()) ? " " : place.getMetro(),
+						TextUtils.isEmpty(place.getAddress()) ? " " : place.getAddress(),
+						TextUtils.isEmpty(place.getCuisine()) ? " " : place.getCuisine(),
+						TextUtils.isEmpty(place.getAverage_bill()) ? " " : place.getAverage_bill(),
+						TextUtils.isEmpty(place.getWorking_hours()) ? " " : place.getWorking_hours(),
+						TextUtils.isEmpty(place.getPhone()) ? " " : place.getPhone(),
+						TextUtils.isEmpty(place.getWebsite()) ? " " : place.getWebsite()));
+			updateActionBarTitle(place.getName());			
+			adapter = new ImagesPagerAdapter(getSupportFragmentManager(), place.getPlacePhotos());
+			pager.setAdapter(adapter);
+	        indicator.setViewPager(pager);
+	        //select first photo in view pager
+	        indicator.setCurrentItem(0);
+	        initializationDone = true;
+		}
+	}
+	
+	@Override
+	public void onSimpleGet(long requestId, boolean success) {
+		try {
+			if(requestId == loadAnnReqId){
+				String qRes = getDataSession().getSimpleHttpResponse(requestId);
+				Log.d(TAG, "onSimpleGet result: " + qRes);
+				Gson gson = BaseGetApiCommand.getGson();	
+				
+				Albums albums =  gson.fromJson(qRes, Albums.class);
+				if(albums != null && albums.getAlbums().length > 0 ) {
+					Log.i(TAG, "Found announcemnts " + albums.getAlbums().length +" for place id =" + placeId);
+					iRes = 1;
+				} else {
+					View cnt = findViewById(R.id.empt_ann_cnt);
+					if(cnt != null){
+						//cnt.setVisibility(View.VISIBLE);
+						iRes = -1;
+					}
+					/*AlertDialog.Builder builder = new AlertDialog.Builder(this);
+					builder.setTitle("Важное сообщение!")
+							.setMessage("Покормите кота!")
+							.setCancelable(false)
+							.setNegativeButton("ОК, иду на кухню",
+									new DialogInterface.OnClickListener() {
+										public void onClick(DialogInterface dialog, int id) {
+											dialog.cancel();
+										}
+									});
+					AlertDialog alert = builder.create();
+					alert.show();
+					*/
+					
+					Log.i(TAG, "No announcemnts for place id =" + placeId);
+					return;
+				}
+			}
+		} catch (JsonSyntaxException e) {
+			Log.e(TAG, "bad json comes from server", e);
+		}
+
+	}
+	
+	private String createUrlForPlace(long placeId){
+		StringBuilder bldr = new StringBuilder(checkPlaceAnnUrlBase);
+		bldr.append(getDataSession().getAuthTooken());
+		bldr.append("&page=0&place_id=");
+		bldr.append(placeId);
+		return bldr.toString();
+	}
+}
